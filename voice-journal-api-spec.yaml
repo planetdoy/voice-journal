@@ -1,0 +1,2090 @@
+openapi: 3.0.3
+
+info:
+  title: "Voice Journal API"
+  version: "1.0.0"
+  description: |
+    Voice Journal은 사용자가 매일 밤 내일의 계획을 음성으로 녹음하고,
+    아침에 자신의 목소리로 들으며 동기부여를 받는 개인 성장 플랫폼입니다.
+    
+    ## 주요 기능
+    - 🎤 음성 파일 업로드 및 OpenAI Whisper를 통한 텍스트 변환
+    - 📝 계획(plan)과 회고(reflection) 기록 관리
+    - 🎯 목표 설정 및 달성률 추적
+    - 📊 성장 패턴 분석 및 인사이트 제공
+    
+    ## 인증 방식
+    이 API는 JWT 기반 Bearer 토큰 인증을 사용합니다.
+    모든 보호된 엔드포인트는 Authorization 헤더에 'Bearer {token}' 형식으로 토큰을 포함해야 합니다.
+    
+    ## 응답 형식
+    모든 응답은 JSON 형식이며, 에러 발생 시 일관된 ErrorResponse 스키마를 따릅니다.
+    
+    ## 파일 업로드
+    음성 파일 업로드는 S3 Pre-signed URL을 통해 이루어지며, 
+    지원되는 형식은 MP3, WAV, M4A, OGG (최대 25MB)입니다.
+  termsOfService: "https://voicejournal.com/terms"
+  contact:
+    name: "Voice Journal 지원팀"
+    url: "https://voicejournal.com/support"
+    email: "support@voicejournal.com"
+  license:
+    name: "MIT"
+    url: "https://opensource.org/licenses/MIT"
+
+servers:
+  - url: "https://api.voicejournal.com"
+    description: "Production server"
+  - url: "https://staging-api.voicejournal.com"
+    description: "Staging server for testing"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "JWT 토큰을 Authorization 헤더에 'Bearer {token}' 형식으로 포함해주세요."
+
+  schemas:
+    ErrorResponse:
+      type: object
+      description: "표준 에러 응답 형식"
+      properties:
+        code:
+          type: integer
+          description: "HTTP 상태 코드"
+          example: 400
+        message:
+          type: string
+          description: "사용자에게 표시할 에러 메시지"
+          example: "잘못된 요청입니다."
+        details:
+          type: string
+          description: "개발자를 위한 상세 에러 정보 (선택적)"
+          example: "filename 파라미터가 누락되었습니다."
+        timestamp:
+          type: string
+          format: date-time
+          description: "에러 발생 시간 (ISO 8601)"
+          example: "2024-01-15T10:30:00Z"
+        requestId:
+          type: string
+          description: "요청 추적을 위한 고유 ID (선택적)"
+          example: "req_abc123def456"
+      required: [code, message, timestamp]
+
+    User:
+      type: object
+      description: "사용자 정보"
+      properties:
+        id:
+          type: string
+          description: "사용자 고유 식별자"
+          example: "user_123456789"
+        name:
+          type: string
+          minLength: 2
+          maxLength: 50
+          description: "사용자 이름"
+          example: "김성장"
+        email:
+          type: string
+          format: email
+          description: "사용자 이메일 주소"
+          example: "growth@example.com"
+        avatar:
+          type: string
+          format: uri
+          description: "프로필 이미지 URL (선택적)"
+          example: "https://cdn.voicejournal.com/avatars/user123.jpg"
+        joinDate:
+          type: string
+          format: date
+          description: "가입일 (YYYY-MM-DD)"
+          example: "2024-01-15"
+        lastLogin:
+          type: string
+          format: date-time
+          description: "마지막 로그인 시간"
+          example: "2024-01-15T10:30:00Z"
+        emailVerified:
+          type: boolean
+          description: "이메일 인증 완료 여부"
+          example: true
+        plan:
+          type: string
+          enum: [free, premium]
+          description: "구독 플랜"
+          example: "free"
+        createdAt:
+          type: string
+          format: date-time
+          description: "계정 생성 시간"
+          example: "2024-01-15T09:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          description: "마지막 업데이트 시간"
+          example: "2024-01-15T10:30:00Z"
+      required: [id, name, email, joinDate, emailVerified, plan, createdAt]
+
+    VoiceEntry:
+      type: object
+      description: "음성 기록 정보"
+      properties:
+        id:
+          type: string
+          description: "기록 고유 식별자"
+          example: "entry_789012345"
+        userId:
+          type: string
+          description: "소유자 사용자 ID"
+          example: "user_123456789"
+        type:
+          type: string
+          enum: [plan, reflection]
+          description: "기록 타입 - plan: 계획, reflection: 회고"
+          example: "plan"
+        date:
+          type: string
+          format: date
+          description: "기록 날짜 (YYYY-MM-DD)"
+          example: "2024-01-15"
+        time:
+          type: string
+          pattern: "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$"
+          description: "기록 시간 (HH:MM, 24시간 형식)"
+          example: "21:30"
+        duration:
+          type: string
+          pattern: "^[0-9]+:[0-5][0-9]$"
+          description: "음성 길이 (MM:SS)"
+          example: "2:45"
+        text:
+          type: string
+          description: "AI로 변환된 텍스트 내용"
+          example: "내일은 아침 7시에 일어나서 운동을 30분 하고, 오전에는 프로젝트 기획서를 완성하겠습니다. 오후에는 독서 시간을 가지고, 저녁에는 오늘 하루를 돌아보는 시간을 갖겠습니다."
+        audioUrl:
+          type: string
+          format: uri
+          description: "음성 파일 접근 URL"
+          example: "https://cdn.voicejournal.com/audio/user123/entry789012.mp3"
+        fileName:
+          type: string
+          description: "업로드된 원본 파일명"
+          example: "morning_plan.mp3"
+        fileSize:
+          type: string
+          description: "파일 크기 (사람이 읽기 쉬운 형식)"
+          example: "2.1MB"
+        fileSizeBytes:
+          type: integer
+          description: "파일 크기 (바이트)"
+          example: 2097152
+        language:
+          type: string
+          description: "AI가 감지한 언어 코드"
+          example: "ko"
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: "AI 변환 신뢰도 (0-1)"
+          example: 0.95
+        summary:
+          type: string
+          description: "AI가 생성한 내용 요약 (선택적)"
+          example: "내일 아침 운동과 프로젝트 기획서 완성을 목표로 설정"
+        keywords:
+          type: array
+          items:
+            type: string
+          description: "AI가 추출한 키워드 목록"
+          example: ["운동", "프로젝트", "기획서", "독서"]
+        completed:
+          type: boolean
+          description: "완료 여부 (계획의 경우)"
+          example: false
+        mood:
+          type: string
+          enum: [positive, neutral, negative]
+          description: "AI가 분석한 감정 상태 (선택적)"
+          example: "positive"
+        createdAt:
+          type: string
+          format: date-time
+          description: "생성 시간"
+          example: "2024-01-15T21:30:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          description: "마지막 수정 시간"
+          example: "2024-01-15T21:30:00Z"
+      required: [id, userId, type, date, time, duration, text, audioUrl, createdAt]
+
+    DailyGoal:
+      type: object
+      description: "일일 목표 정보"
+      properties:
+        id:
+          type: string
+          description: "목표 고유 식별자"
+          example: "goal_345678901"
+        userId:
+          type: string
+          description: "소유자 사용자 ID"
+          example: "user_123456789"
+        text:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: "목표 내용"
+          example: "아침 운동 30분"
+        completed:
+          type: boolean
+          description: "완료 여부"
+          example: true
+        priority:
+          type: string
+          enum: [low, medium, high]
+          description: "우선순위"
+          example: "high"
+        category:
+          type: string
+          description: "목표 카테고리 (선택적)"
+          example: "건강"
+        estimatedMinutes:
+          type: integer
+          minimum: 1
+          description: "예상 소요 시간 (분, 선택적)"
+          example: 30
+        createdAt:
+          type: string
+          format: date-time
+          description: "생성 시간"
+          example: "2024-01-15T07:00:00Z"
+        completedAt:
+          type: string
+          format: date-time
+          description: "완료 시간 (완료된 경우)"
+          example: "2024-01-15T07:30:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          description: "마지막 수정 시간"
+          example: "2024-01-15T07:30:00Z"
+      required: [id, userId, text, completed, createdAt]
+
+    TranscriptionRequest:
+      type: object
+      description: "음성 변환 요청"
+      properties:
+        audioUrl:
+          type: string
+          format: uri
+          description: "변환할 음성 파일의 URL"
+          example: "https://cdn.voicejournal.com/temp/audio123.mp3"
+        language:
+          type: string
+          description: "언어 코드 (선택적, 기본값: ko)"
+          example: "ko"
+        prompt:
+          type: string
+          description: "변환 정확도 향상을 위한 힌트 텍스트 (선택적)"
+          example: "이것은 내일 계획에 대한 음성 메모입니다."
+      required: [audioUrl]
+
+    TranscriptionResponse:
+      type: object
+      description: "음성 변환 결과"
+      properties:
+        success:
+          type: boolean
+          description: "변환 성공 여부"
+          example: true
+        text:
+          type: string
+          description: "변환된 텍스트"
+          example: "내일은 아침 7시에 일어나서 운동을 하겠습니다."
+        language:
+          type: string
+          description: "감지된 언어 코드"
+          example: "ko"
+        duration:
+          type: number
+          format: float
+          description: "음성 길이 (초)"
+          example: 165.5
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: "전체 변환 신뢰도"
+          example: 0.95
+        segments:
+          type: array
+          description: "세그먼트별 상세 정보 (선택적)"
+          items:
+            type: object
+            properties:
+              start:
+                type: number
+                format: float
+                description: "시작 시간 (초)"
+                example: 0.0
+              end:
+                type: number
+                format: float
+                description: "종료 시간 (초)"
+                example: 5.2
+              text:
+                type: string
+                description: "세그먼트 텍스트"
+                example: "내일은 아침 7시에"
+              confidence:
+                type: number
+                format: float
+                description: "세그먼트 신뢰도"
+                example: 0.98
+        processingTime:
+          type: number
+          format: float
+          description: "처리 시간 (초)"
+          example: 3.2
+      required: [success, text]
+
+    AuthTokens:
+      type: object
+      description: "인증 토큰 정보"
+      properties:
+        accessToken:
+          type: string
+          description: "액세스 토큰 (API 호출용, 1시간 유효)"
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyXzEyMzQ1NiIsImlhdCI6MTcwNTMxNDAwMCwiZXhwIjoxNzA1MzE3NjAwfQ.signature"
+        refreshToken:
+          type: string
+          description: "리프레시 토큰 (토큰 갱신용, 30일 유효)"
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyXzEyMzQ1NiIsInR5cCI6InJlZnJlc2giLCJpYXQiOjE3MDUzMTQwMDB9.signature"
+        expiresIn:
+          type: integer
+          description: "액세스 토큰 만료까지 남은 시간 (초)"
+          example: 3600
+        tokenType:
+          type: string
+          description: "토큰 타입"
+          example: "Bearer"
+        scope:
+          type: string
+          description: "토큰 권한 범위"
+          example: "read write"
+      required: [accessToken, refreshToken, expiresIn, tokenType]
+
+    PaginationInfo:
+      type: object
+      description: "페이지네이션 정보"
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          description: "현재 페이지 번호"
+          example: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: "페이지당 항목 수"
+          example: 10
+        total:
+          type: integer
+          minimum: 0
+          description: "전체 항목 수"
+          example: 45
+        totalPages:
+          type: integer
+          minimum: 0
+          description: "전체 페이지 수"
+          example: 5
+        hasNext:
+          type: boolean
+          description: "다음 페이지 존재 여부"
+          example: true
+        hasPrev:
+          type: boolean
+          description: "이전 페이지 존재 여부"
+          example: false
+        nextPage:
+          type: integer
+          description: "다음 페이지 번호 (있는 경우)"
+          example: 2
+        prevPage:
+          type: integer
+          description: "이전 페이지 번호 (있는 경우)"
+          example: null
+      required: [page, size, total, totalPages, hasNext, hasPrev]
+
+    PaginatedVoiceEntries:
+      type: object
+      description: "페이지네이션된 음성 기록 목록"
+      properties:
+        data:
+          type: array
+          description: "음성 기록 배열"
+          items:
+            $ref: '#/components/schemas/VoiceEntry'
+        pagination:
+          $ref: '#/components/schemas/PaginationInfo'
+        filters:
+          type: object
+          description: "적용된 필터 정보"
+          properties:
+            type:
+              type: string
+              enum: [plan, reflection]
+              example: "plan"
+            startDate:
+              type: string
+              format: date
+              example: "2024-01-01"
+            endDate:
+              type: string
+              format: date
+              example: "2024-01-31"
+            sort:
+              type: string
+              enum: [newest, oldest]
+              example: "newest"
+      required: [data, pagination]
+
+    PresignedUrlResponse:
+      type: object
+      description: "S3 Pre-signed URL 응답"
+      properties:
+        uploadUrl:
+          type: string
+          format: uri
+          description: "파일 업로드용 pre-signed URL"
+          example: "https://s3.amazonaws.com/voice-journal-bucket/audio/user123/20240115_213000.mp3?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=..."
+        fileUrl:
+          type: string
+          format: uri
+          description: "업로드 완료 후 파일 접근 URL"
+          example: "https://cdn.voicejournal.com/audio/user123/20240115_213000.mp3"
+        fileKey:
+          type: string
+          description: "S3 객체 키"
+          example: "audio/user123/20240115_213000.mp3"
+        expiresIn:
+          type: integer
+          description: "URL 만료까지 남은 시간 (초)"
+          example: 3600
+        maxFileSize:
+          type: integer
+          description: "최대 업로드 가능 파일 크기 (바이트)"
+          example: 26214400
+      required: [uploadUrl, fileUrl, fileKey, expiresIn]
+
+paths:
+  # Authentication
+  /api/v1/auth/signup:
+    post:
+      tags: ["Authentication"]
+      summary: "회원가입"
+      description: |
+        새로운 사용자 계정을 생성합니다.
+        
+        - 이메일 중복 확인
+        - 비밀번호 강도 검증 (최소 8자, 영문+숫자+특수문자 권장)
+        - 이메일 인증 메일 발송
+      operationId: "signup"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 50
+                  description: "사용자 이름"
+                  example: "김성장"
+                email:
+                  type: string
+                  format: email
+                  description: "이메일 주소"
+                  example: "growth@example.com"
+                password:
+                  type: string
+                  minLength: 8
+                  description: "비밀번호 (최소 8자)"
+                  example: "securePassword123!"
+                agreeToTerms:
+                  type: boolean
+                  description: "이용약관 동의"
+                  example: true
+              required: [name, email, password, agreeToTerms]
+      responses:
+        '201':
+          description: "회원가입 성공"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "회원가입이 완료되었습니다. 이메일 인증을 진행해주세요."
+                  user:
+                    $ref: '#/components/schemas/User'
+                  emailSent:
+                    type: boolean
+                    description: "인증 이메일 발송 여부"
+                    example: true
+        '400':
+          description: "잘못된 요청 (유효성 검사 실패, 이메일 중복 등)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                validation_error:
+                  summary: "유효성 검사 실패"
+                  value:
+                    code: 400
+                    message: "입력 정보가 올바르지 않습니다."
+                    details: "비밀번호는 최소 8자 이상이어야 합니다."
+                    timestamp: "2024-01-15T10:30:00Z"
+                email_exists:
+                  summary: "이메일 중복"
+                  value:
+                    code: 400
+                    message: "이미 사용 중인 이메일입니다."
+                    timestamp: "2024-01-15T10:30:00Z"
+        '429':
+          description: "요청 한도 초과 (회원가입 시도 제한)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "서버 내부 오류"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/login:
+    post:
+      tags: ["Authentication"]
+      summary: "로그인"
+      description: |
+        이메일과 비밀번호로 로그인하여 JWT 토큰을 발급받습니다.
+        
+        - 이메일 인증 완료 확인
+        - 로그인 시도 횟수 제한 (5회 실패 시 15분 잠금)
+        - 액세스 토큰 (1시간) + 리프레시 토큰 (30일) 발급
+      operationId: "login"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: "이메일 주소"
+                  example: "growth@example.com"
+                password:
+                  type: string
+                  description: "비밀번호"
+                  example: "securePassword123!"
+                rememberMe:
+                  type: boolean
+                  description: "로그인 상태 유지 (선택적)"
+                  example: false
+              required: [email, password]
+      responses:
+        '200':
+          description: "로그인 성공"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/AuthTokens'
+                  - type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+        '400':
+          description: "잘못된 요청"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: "인증 실패 (잘못된 이메일/비밀번호)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_credentials:
+                  summary: "잘못된 인증 정보"
+                  value:
+                    code: 401
+                    message: "이메일 또는 비밀번호가 올바르지 않습니다."
+                    timestamp: "2024-01-15T10:30:00Z"
+                email_not_verified:
+                  summary: "이메일 미인증"
+                  value:
+                    code: 401
+                    message: "이메일 인증을 완료해주세요."
+                    timestamp: "2024-01-15T10:30:00Z"
+        '429':
+          description: "로그인 시도 한도 초과"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "서버 내부 오류"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/refresh:
+    post:
+      tags: ["Authentication"]
+      summary: "토큰 갱신"
+      description: |
+        리프레시 토큰을 사용하여 새로운 액세스 토큰을 발급받습니다.
+        
+        - 리프레시 토큰 유효성 검증
+        - 새로운 액세스 토큰 발급 (1시간 유효)
+        - 필요시 새로운 리프레시 토큰도 발급
+      operationId: "refreshToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+                  description: "리프레시 토큰"
+                  example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+              required: [refreshToken]
+      responses:
+        '200':
+          description: "토큰 갱신 성공"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                    description: "새로운 액세스 토큰"
+                    example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  refreshToken:
+                    type: string
+                    description: "새로운 리프레시 토큰 (선택적)"
+                    example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  expiresIn:
+                    type: integer
+                    description: "액세스 토큰 만료 시간 (초)"
+                    example: 3600
+                  tokenType:
+                    type: string
+                    example: "Bearer"
+        '400':
+          description: "잘못된 요청"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: "유효하지 않은 리프레시 토큰"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "서버 내부 오류"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # File Upload
+  /api/v1/upload/presigned-url:
+    get:
+      tags: ["File Upload"]
+      summary: "S3 Pre-signed URL 발급"
+      description: |
+        음성 파일 업로드를 위한 S3 pre-signed URL을 발급합니다.
+        
+        - 지원 형식: MP3, WAV, M4A, OGG, WEBM
+        - 최대 파일 크기: 25MB (OpenAI Whisper 제한)
+        - URL 유효 시간: 1시간
+      operationId: "getPresignedUrl"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: filename
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-zA-Z0-9._-]+\\.(mp3|wav|m4a|ogg|webm)$"
+            example: "morning_plan.mp3"
+          description: "업로드할 파일명 (확장자 포함)"
+        - in: query
+          name: contentType
+          required: true
+          schema:
+            type: string
+            enum: ["audio/mpeg", "audio/wav", "audio/m4a", "audio/ogg", "audio/webm"]
+            example: "audio/mpeg"
+          description: "파일 MIME 타입"
+        - in: query
+          name: fileSize
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 26214400
+            example: 2097152
+          description: "파일 크기 (바이트, 선택적)"
+      responses:
+        '200':
+          description: "Pre-signed URL 발급 성공"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresignedUrlResponse'
+        '400':
+          description: "잘못된 요청 (지원하지 않는 파일 형식, 크기 초과 등)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: "인증 실패"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: "요청 한도 초과"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "서버 내부 오류"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    options:
+      tags: ["File Upload"]
+      summary: "CORS preflight for presigned URL"
+      description: "CORS preflight 요청을 처리합니다."
+      operationId: "presignedUrlOptions"
+      responses:
+        '204':
+          description: "CORS preflight 성공"
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: "*"
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: "GET, OPTIONS"
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: "Content-Type, Authorization"
+            Access-Control-Max-Age:
+              schema:
+                type: integer
+                example: 86400
+
+  # Voice Processing
+  /api/v1/transcribe:
+    post:
+      tags: ["Voice Processing"]
+      summary: "음성 텍스트 변환"
+      description: |
+        OpenAI Whisper를 사용하여 음성 파일을 텍스트로 변환합니다.
+        
+        - 지원 언어: 한국어, 영어 등 99개 언어
+        - 자동 언어 감지 또는 수동 지정 가능
+        - 세그먼트별 타임스탬프 제공
+        - 변환 신뢰도 점수 포함
+      operationId: "transcribeAudio"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscriptionRequest'
+      responses:
+        '200':
+          description: "변환 성공"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptionResponse'
+        '400':
+          description: "잘못된 요청 (파일 형식, 크기, URL 등)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_file:
+                  summary: "지원하지 않는 파일"
+                  value:
+                    code: 400
+                    message: "지원하지 않는 파일 형식입니다."
+                    details: "MP3, WAV, M4A, OGG 파일만 지원됩니다."
+                    timestamp: "2024-01-15T10:30:00Z"
+                file_too_large:
+                  summary: "파일 크기 초과"
+                  value:
+                    code: 400
+                    message: "파일 크기가 너무 큽니다."
+                    details: "최대 25MB까지 지원됩니다."
+                    timestamp: "2024-01-15T10:30:00Z"
+        '401':
+          description: "인증 실패"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '402':
+          description: "할당량 부족 (OpenAI API 크레딧 부족)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: "요청 한도 초과"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "서버 내부 오류"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    options:
+      tags: ["Voice Processing"]
+      summary: "CORS preflight for transcription"
+      description: "CORS preflight 요청을 처리합니다."
+      operationId: "transcribeOptions"
+      responses:
+        '204':
+          description: "CORS preflight 성공"
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: "*"
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: "POST, OPTIONS"
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: "Content-Type, Authorization"
+
+  # Voice Entries
+  /api/v1/voice-entries:
+    post:
+      tags: ["Voice Entries"]
+      summary: "음성 기록 생성"
+      description: |
+        새로운 음성 기록을 생성합니다.
+        
+        - 계획(plan) 또는 회고(reflection) 타입 지정
+        - AI 변환된 텍스트와 원본 음성 파일 연결
+        - 자동 키워드 추출 및 감정 분석
+        - 무료 플랜 사용량 제한 적용
+      operationId: "createVoiceEntry"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum: [plan, reflection]
+                  description: "기록 타입"
+                  example: "plan"
+                text:
+                  type: string
+                  minLength: 1
+                  description: "변환된 텍스트"
+                  example: "내일은 아침 7시에 일어나서 운동을 30분 하겠습니다."
+                audioUrl:
+                  type: string
+                  format: uri
+                  description: "음성 파일 URL"
+                  example: "https://cdn.voicejournal.com/audio/user123/entry789.mp3"
+                fileName:
+                  type: string
+                  description: "원본 파일명"
+                  example: "morning_plan.mp3"
+                fileSize:
+                  type: string
+                  description: "파일 크기"
+                  example: "2.1MB"
+                fileSizeBytes:
+                  type: integer
+                  description: "파일 크기 (바이트)"
+                  example: 2097152
+                duration:
+                  type: string
+                  description: "음성 길이"
+                  example: "2:45"
+                language:
+                  type: string
+                  description: "언어 코드"
+                  example: "ko"
+                confidence:
+                  type: number
+                  format: float
+                  description: "변환 신뢰도"
+                  example: 0.95
+                date:
+                  type: string
+                  format: date
+                  description: "기록 날짜 (선택적, 기본값: 오늘)"
+                  example: "2024-01-15"
+              required: [type, text, audioUrl]
+      responses:
+        '201':
+          description: "기록 생성 성공"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceEntry'
+        '400':
+          description: "잘못된 요청"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: "인증 실패"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '402':
+          description: "무료 플랜 사용량 초과"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: "요청 한도 초과"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "서버 내부 오류"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: ["Voice Entries"]
+      summary: "음성 기록 목록 조회"
+      description: |
+        사용자의 음성 기록 목록을 페이지네이션으로 조회합니다.
+        
+        - 타입별 필터링 (계획/회고)
+        - 날짜 범위 필터링
+        - 정렬 옵션 (최신순/오래된순)
+        - 검색 기능 (텍스트 내용 기반)
+      operationId: "getVoiceEntries"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: "페이지 번호"
+          example: 1
+        - in: query
+          name: size
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: "페이지 크기"
+          example: 10
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [plan, reflection]
+          description: "기록 타입 필터"
+          example: "plan"
+        - in: query
+          name: startDate
+          schema:
+            type: string
+            format: date
+          description: "시작 날짜 필터 (YYYY-MM-DD)"
+          example: "2024-01-01"
+        - in: query
+          name: endDate
+          schema:
+            type: string
+            format: date
+          description: "종료 날짜 필터 (YYYY-MM-DD)"
+          example: "2024-01-31"
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [newest, oldest]
+            default: newest
+          description: "정렬 순서"
+          example: "newest"
+        - in: query
+          name: search
+          schema:
+            type: string
+            maxLength: 100
+          description: "텍스트 내용 검색"
+          example: "운동"
+        - in: query
+          name: completed
+          schema:
+            type: boolean
+          description: "완료 여부 필터 (계획의 경우)"
+          example: false
+      responses:
+        '200':
+          description: "목록 조회 성공"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedVoiceEntries'
+        '400':
+          description: "잘못된 요청 (잘못된 날짜 형식 등)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: "인증 실패"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: "요청 한도 초과"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "서버 내부 오류"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    options:
+      tags: ["Voice Entries"]
+      summary: "CORS preflight for voice entries"
+      description: "CORS preflight 요청을 처리합니다."
+      operationId: "voiceEntriesOptions"
+      responses:
+        '204':
+          description: "CORS preflight 성공"
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: "*"
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: "GET, POST, OPTIONS"
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: "Content-Type, Authorization"
+
+  /api/v1/voice-entries/{entryId}:
+    get:
+      tags: ["Voice Entries"]
+      summary: "음성 기록 상세 조회"
+      description: |
+        특정 음성 기록의 상세 정보를 조회합니다.
+        
+        - 전체 텍스트 내용
+        - 음성 파일 정보
+        - AI 분석 결과 (키워드, 감정 등)
+        - 세그먼트별 타임스탬프 (있는 경우)
+      operationId: "getVoiceEntry"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: entryId
+          required: true
+          schema:
+            type: string
+            pattern: "^entry_[a-zA-Z0-9]+$"
+          description: "기록 고유 ID"
+          example: "entry_789012345"
+      responses:
+        '200':
+          description: "상세 조회 성공"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceEntry'
+        '400':
+          description: "잘못된 요청 (잘못된 ID 형식)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: "인증 실패"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: "기록을 찾을 수 없음"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: "요청 한도 초과"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "서버 내부 오류"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags: ["Voice Entries"]
+      summary: "음성 기록 수정"
+      description: |
+        기존 음성 기록을 수정합니다.
+        
+        - 텍스트 내용 수정 가능
+        - 완료 상태 변경 가능
+        - 음성 파일은 수정 불가
+        - 수정 시간 자동 업데이트
+      operationId: "updateVoiceEntry"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: entryId
+          required: true
+          schema:
+            type: string
+            pattern: "^entry_[a-zA-Z0-9]+$"
+          description: "기록 고유 ID"
+          example: "entry_789012345"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text:
+                  type: string
+                  minLength: 1
+                  description: "수정된 텍스트"
+                  example: "내일은 아침 7시에 일어나서 운동을 1시간 하겠습니다."
+                completed:
+                  type: boolean
+                  description: "완료 여부"
+                  example: true
+                summary:
+                  type: string
+                  description: "사용자 정의 요약"
+                  example: "내일 아침 운동 계획"
+              minProperties: 1
+      responses:
+        '200':
+          description: "수정 성공"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceEntry'
+        '400':
+          description: "잘못된 요청"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: "인증 실패"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: "기록을 찾을 수 없음"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: "요청 한도 초과"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "서버 내부 오류"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: ["Voice Entries"]
+      summary: "음성 기록 삭제"
+      description: |
+        특정 음성 기록을 삭제합니다.
+        
+        - 기록과 연결된 음성 파일도 함께 삭제
+        - 삭제된 데이터는 복구 불가
+        - 소프트 삭제 (30일 후 완전 삭제)
+      operationId: "deleteVoiceEntry"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: entryId
+          required: true
+          schema:
+            type: string
+            pattern: "^entry_[a-zA-Z0-9]+$"
+          description: "기록 고유 ID"
+          example: "entry_789012345"
+      responses:
+        '204':
+          description: "삭제 성공"
+        '400':
+          description: "잘못된 요청"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: "인증 실패"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: "기록을 찾을 수 없음"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: "요청 한도 초과"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "서버 내부 오류"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    options:
+      tags: ["Voice Entries"]
+      summary: "CORS preflight for voice entry operations"
+      description: "CORS preflight 요청을 처리합니다."
+      operationId: "voiceEntryOptions"
+      responses:
+        '204':
+          description: "CORS preflight 성공"
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: "*"
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: "GET, PUT, DELETE, OPTIONS"
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: "Content-Type, Authorization"
+
+  # Goals
+  /api/v1/goals:
+    post:
+      tags: ["Goals"]
+      summary: "목표 생성"
+      description: |
+        새로운 일일 목표를 생성합니다.
+        
+        - 하루 최대 20개 목표 제한
+        - 우선순위 설정 가능
+        - 카테고리 분류 가능
+        - 예상 소요 시간 설정 가능
+      operationId: "createGoal"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  description: "목표 내용"
+                  example: "아침 운동 30분"
+                priority:
+                  type: string
+                  enum: [low, medium, high]
+                  description: "우선순위 (기본값: medium)"
+                  example: "high"
+                category:
+                  type: string
+                  maxLength: 50
+                  description: "목표 카테고리 (선택적)"
+                  example: "건강"
+                estimatedMinutes:
+                  type: integer
+                  minimum: 1
+                  maximum: 1440
+                  description: "예상 소요 시간 (분, 선택적)"
+                  example: 30
+                date:
+                  type: string
+                  format: date
+                  description: "목표 날짜 (기본값: 오늘)"
+                  example: "2024-01-15"
+              required: [text]
+      responses:
+        '201':
+          description: "목표 생성 성공"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyGoal'
+        '400':
+          description: "잘못된 요청 (목표 개수 초과, 유효성 검사 실패 등)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                too_many_goals:
+                  summary: "목표 개수 초과"
+                  value:
+                    code: 400
+                    message: "하루 최대 20개의 목표만 설정할 수 있습니다."
+                    timestamp: "2024-01-15T10:30:00Z"
+        '401':
+          description: "인증 실패"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: "요청 한도 초과"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "서버 내부 오류"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: ["Goals"]
+      summary: "목표 목록 조회"
+      description: |
+        사용자의 목표 목록을 조회합니다.
+        
+        - 날짜별 목표 조회
+        - 완료 상태별 필터링
+        - 우선순위별 정렬
+        - 카테고리별 그룹화
+      operationId: "getGoals"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: date
+          schema:
+            type: string
+            format: date
+          description: "특정 날짜의 목표 조회 (기본값: 오늘)"
+          example: "2024-01-15"
+        - in: query
+          name: completed
+          schema:
+            type: boolean
+          description: "완료 여부 필터"
+          example: false
+        - in: query
+          name: priority
+          schema:
+            type: string
+            enum: [low, medium, high]
+          description: "우선순위 필터"
+          example: "high"
+        - in: query
+          name: category
+          schema:
+            type: string
+          description: "카테고리 필터"
+          example: "건강"
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [priority, created, alphabetical]
+            default: priority
+          description: "정렬 기준"
+          example: "priority"
+      responses:
+        '200':
+          description: "목표 목록 조회 성공"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  goals:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DailyGoal'
+                  summary:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                        description: "전체 목표 수"
+                        example: 5
+                      completed:
+                        type: integer
+                        description: "완료된 목표 수"
+                        example: 3
+                      completionRate:
+                        type: number
+                        format: float
+                        description: "완료율 (0-1)"
+                        example: 0.6
+                      totalEstimatedMinutes:
+                        type: integer
+                        description: "총 예상 소요 시간"
+                        example: 120
+        '400':
+          description: "잘못된 요청"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: "인증 실패"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: "요청 한도 초과"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "서버 내부 오류"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    options:
+      tags: ["Goals"]
+      summary: "CORS preflight for goals"
+      description: "CORS preflight 요청을 처리합니다."
+      operationId: "goalsOptions"
+      responses:
+        '204':
+          description: "CORS preflight 성공"
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: "*"
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: "GET, POST, OPTIONS"
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: "Content-Type, Authorization"
+
+  /api/v1/goals/{goalId}:
+    put:
+      tags: ["Goals"]
+      summary: "목표 수정"
+      description: |
+        기존 목표를 수정합니다.
+        
+        - 목표 내용 수정
+        - 완료 상태 변경
+        - 우선순위 변경
+        - 완료 시간 자동 기록
+      operationId: "updateGoal"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: goalId
+          required: true
+          schema:
+            type: string
+            pattern: "^goal_[a-zA-Z0-9]+$"
+          description: "목표 고유 ID"
+          example: "goal_345678901"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  description: "목표 내용"
+                  example: "아침 운동 1시간"
+                completed:
+                  type: boolean
+                  description: "완료 여부"
+                  example: true
+                priority:
+                  type: string
+                  enum: [low, medium, high]
+                  description: "우선순위"
+                  example: "high"
+                category:
+                  type: string
+                  maxLength: 50
+                  description: "카테고리"
+                  example: "건강"
+                estimatedMinutes:
+                  type: integer
+                  minimum: 1
+                  maximum: 1440
+                  description: "예상 소요 시간 (분)"
+                  example: 60
+              minProperties: 1
+      responses:
+        '200':
+          description: "목표 수정 성공"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyGoal'
+        '400':
+          description: "잘못된 요청"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: "인증 실패"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: "목표를 찾을 수 없음"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: "요청 한도 초과"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "서버 내부 오류"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: ["Goals"]
+      summary: "목표 삭제"
+      description: |
+        특정 목표를 삭제합니다.
+        
+        - 즉시 삭제 (복구 불가)
+        - 완료된 목표도 삭제 가능
+        - 통계에서 제외됨
+      operationId: "deleteGoal"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: goalId
+          required: true
+          schema:
+            type: string
+            pattern: "^goal_[a-zA-Z0-9]+$"
+          description: "목표 고유 ID"
+          example: "goal_345678901"
+      responses:
+        '204':
+          description: "목표 삭제 성공"
+        '400':
+          description: "잘못된 요청"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: "인증 실패"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: "목표를 찾을 수 없음"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429': 
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: "요청 한도 초과"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "서버 내부 오류"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    options:
+      tags: ["Goals"]
+      summary: "CORS preflight for goal operations"
+      description: "CORS preflight 요청을 처리합니다."
+      operationId: "goalOptions"
+      responses:
+        '204':
+          description: "CORS preflight 성공"
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: "*"
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: "PUT, DELETE, OPTIONS"
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: "Content-Type, Authorization"
+
+  # User Profile
+  /api/v1/users/profile:
+    get:
+      tags: ["User Profile"]
+      summary: "프로필 조회"
+      description: |
+        현재 사용자의 프로필 정보를 조회합니다.
+        
+        - 기본 정보 (이름, 이메일, 가입일 등)
+        - 계정 상태 (이메일 인증, 구독 플랜 등)
+        - 사용 통계 (총 기록 수, 연속 일수 등)
+      operationId: "getUserProfile"
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: "프로필 조회 성공"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/User'
+                  - type: object
+                    properties:
+                      stats:
+                        type: object
+                        description: "사용자 통계"
+                        properties:
+                          totalEntries:
+                            type: integer
+                            description: "총 기록 수"
+                            example: 45
+                          totalGoals:
+                            type: integer
+                            description: "총 목표 수"
+                            example: 120
+                          currentStreak:
+                            type: integer
+                            description: "현재 연속 기록 일수"
+                            example: 7
+                          longestStreak:
+                            type: integer
+                            description: "최장 연속 기록 일수"
+                            example: 21
+                          goalCompletionRate:
+                            type: number
+                            format: float
+                            description: "목표 달성률 (0-1)"
+                            example: 0.78
+                          joinDays:
+                            type: integer
+                            description: "가입 후 경과 일수"
+                            example: 30
+        '401':
+          description: "인증 실패"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: "요청 한도 초과"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "서버 내부 오류"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags: ["User Profile"]
+      summary: "프로필 수정"
+      description: |
+        사용자 프로필 정보를 수정합니다.
+        
+        - 이름 변경 가능
+        - 프로필 이미지 URL 변경 가능
+        - 이메일 변경 시 재인증 필요
+      operationId: "updateUserProfile"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 50
+                  description: "사용자 이름"
+                  example: "김성장"
+                avatar:
+                  type: string
+                  format: uri
+                  description: "프로필 이미지 URL"
+                  example: "https://cdn.voicejournal.com/avatars/user123.jpg"
+                email:
+                  type: string
+                  format: email
+                  description: "이메일 주소 (변경 시 재인증 필요)"
+                  example: "newemail@example.com"
+              minProperties: 1
+      responses:
+        '200':
+          description: "프로필 수정 성공"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/User'
+                  - type: object
+                    properties:
+                      emailVerificationRequired:
+                        type: boolean
+                        description: "이메일 재인증 필요 여부"
+                        example: false
+        '400':
+          description: "잘못된 요청 (유효성 검사 실패, 이메일 중복 등)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: "인증 실패"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: "요청 한도 초과"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "서버 내부 오류"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    options:
+      tags: ["User Profile"]
+      summary: "CORS preflight for profile"
+      description: "CORS preflight 요청을 처리합니다."
+      operationId: "profileOptions"
+      responses:
+        '204':
+          description: "CORS preflight 성공"
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: "*"
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: "GET, PUT, OPTIONS"
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: "Content-Type, Authorization"
+
+  /api/v1/users/password:
+    put:
+      tags: ["User Profile"]
+      summary: "비밀번호 변경"
+      description: |
+        사용자 비밀번호를 변경합니다.
+        
+        - 현재 비밀번호 확인 필요
+        - 새 비밀번호 강도 검증
+        - 변경 후 모든 세션 무효화
+        - 이메일 알림 발송
+      operationId: "changePassword"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                currentPassword:
+                  type: string
+                  description: "현재 비밀번호"
+                  example: "currentPassword123!"
+                newPassword:
+                  type: string
+                  minLength: 8
+                  description: "새 비밀번호 (최소 8자, 영문+숫자+특수문자 권장)"
+                  example: "newPassword123!"
+                confirmPassword:
+                  type: string
+                  description: "새 비밀번호 확인"
+                  example: "newPassword123!"
+              required: [currentPassword, newPassword, confirmPassword]
+      responses:
+        '200':
+          description: "비밀번호 변경 성공"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "비밀번호가 성공적으로 변경되었습니다."
+                  sessionInvalidated:
+                    type: boolean
+                    description: "기존 세션 무효화 여부"
+                    example: true
+                  emailSent:
+                    type: boolean
+                    description: "알림 이메일 발송 여부"
+                    example: true
+        '400':
+          description: "잘못된 요청 (비밀번호 불일치, 강도 부족 등)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                password_mismatch:
+                  summary: "비밀번호 확인 불일치"
+                  value:
+                    code: 400
+                    message: "새 비밀번호와 확인 비밀번호가 일치하지 않습니다."
+                    timestamp: "2024-01-15T10:30:00Z"
+                weak_password:
+                  summary: "약한 비밀번호"
+                  value:
+                    code: 400
+                    message: "비밀번호가 너무 약합니다."
+                    details: "영문, 숫자, 특수문자를 포함하여 8자 이상 입력해주세요."
+                    timestamp: "2024-01-15T10:30:00Z"
+        '401':
+          description: "인증 실패 (현재 비밀번호 불일치)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: "요청 한도 초과 (비밀번호 변경 시도 제한)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "서버 내부 오류"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    options:
+      tags: ["User Profile"]
+      summary: "CORS preflight for password change"
+      description: "CORS preflight 요청을 처리합니다."
+      operationId: "passwordOptions"
+      responses:
+        '204':
+          description: "CORS preflight 성공"
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: "*"
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: "PUT, OPTIONS"
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: "Content-Type, Authorization"
+
+tags:
+  - name: "Authentication"
+    description: |
+      사용자 인증 관련 API
+      
+      - 회원가입, 로그인, 토큰 갱신
+      - JWT 기반 인증 시스템
+      - 이메일 인증 및 보안 기능
+  - name: "File Upload"
+    description: |
+      파일 업로드 관련 API
+      
+      - S3 Pre-signed URL 발급
+      - 음성 파일 업로드 지원
+      - 파일 형식 및 크기 제한
+  - name: "Voice Processing"
+    description: |
+      음성 처리 관련 API
+      
+      - OpenAI Whisper 음성-텍스트 변환
+      - 다국어 지원 (한국어 최적화)
+      - 세그먼트별 타임스탬프 제공
+  - name: "Voice Entries"
+    description: |
+      음성 기록 관리 API
+      
+      - 계획(plan) 및 회고(reflection) 기록
+      - CRUD 작업 및 검색 기능
+      - AI 분석 결과 포함
+  - name: "Goals"
+    description: |
+      목표 관리 API
+      
+      - 일일 목표 설정 및 추적
+      - 우선순위 및 카테고리 관리
+      - 완료율 통계 제공
+  - name: "User Profile"
+    description: |
+      사용자 프로필 관리 API
+      
+      - 개인정보 수정
+      - 비밀번호 변경
+      - 사용 통계 조회
