@@ -8,11 +8,17 @@ function formatDate(date: Date): string {
   return date.toISOString().split('T')[0]
 }
 
-// 두 날짜 간의 차이 (일 단위)
-function daysDifference(date1: Date, date2: Date): number {
-  const time1 = new Date(date1).getTime()
-  const time2 = new Date(date2).getTime()
-  return Math.abs((time1 - time2) / (1000 * 60 * 60 * 24))
+// 두 날짜 간의 차이 (일 단위) - 정확한 날짜 차이 계산
+function daysDifference(laterDate: Date, earlierDate: Date): number {
+  const later = new Date(laterDate)
+  const earlier = new Date(earlierDate)
+  
+  // 시간을 00:00:00으로 정규화
+  later.setHours(0, 0, 0, 0)
+  earlier.setHours(0, 0, 0, 0)
+  
+  const timeDiff = later.getTime() - earlier.getTime()
+  return Math.round(timeDiff / (1000 * 60 * 60 * 24))
 }
 
 // 연속 기록 계산 함수
@@ -53,11 +59,13 @@ function calculateStreak(recordDates: string[]): {
   if (isStreakActive) {
     currentStreak = 1
     
-    // 연속된 날짜들을 찾아서 카운트
+    // 연속된 날짜들을 찾아서 카운트 (최신 날짜부터 과거로)
     for (let i = 1; i < sortedDates.length; i++) {
-      const currentDate = new Date(sortedDates[i - 1])
-      const nextDate = new Date(sortedDates[i])
-      const dayDiff = daysDifference(currentDate, nextDate)
+      const recentDate = new Date(sortedDates[i - 1])
+      const olderDate = new Date(sortedDates[i])
+      const dayDiff = daysDifference(recentDate, olderDate)
+      
+      console.log(`연속 기록 확인: ${sortedDates[i - 1]} vs ${sortedDates[i]}, 차이: ${dayDiff}일`)
       
       if (dayDiff === 1) {
         currentStreak++
@@ -69,9 +77,9 @@ function calculateStreak(recordDates: string[]): {
 
   // 가장 긴 연속 기록 계산
   for (let i = 1; i < sortedDates.length; i++) {
-    const currentDate = new Date(sortedDates[i - 1])
-    const nextDate = new Date(sortedDates[i])
-    const dayDiff = daysDifference(currentDate, nextDate)
+    const recentDate = new Date(sortedDates[i - 1])
+    const olderDate = new Date(sortedDates[i])
+    const dayDiff = daysDifference(recentDate, olderDate)
     
     if (dayDiff === 1) {
       tempStreak++
@@ -125,8 +133,15 @@ export async function GET(request: NextRequest) {
     // 기록된 날짜들을 YYYY-MM-DD 형식으로 변환
     const recordDates = voiceEntries.map(entry => formatDate(new Date(entry.recordedAt)))
 
+    console.log("=== 연속 기록 계산 시작 ===")
+    console.log("총 음성 기록 수:", voiceEntries.length)
+    console.log("기록된 날짜들:", recordDates)
+    console.log("오늘 날짜:", formatDate(new Date()))
+
     // 연속 기록 계산
     const streakData = calculateStreak(recordDates)
+    
+    console.log("계산된 연속 기록:", streakData)
 
     // 추가 통계 계산
     const totalRecords = voiceEntries.length

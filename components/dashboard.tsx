@@ -256,47 +256,48 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
     }
   }
 
-  // 페이지 로드 시 음성 기록 및 목표 불러오기
-  useEffect(() => {
-    const fetchVoiceEntries = async () => {
-      try {
-        const response = await fetch('/api/voice-entries')
-        if (!response.ok) {
-          throw new Error('Failed to fetch voice entries')
-        }
-        
-        const result = await response.json()
-        if (result.success && result.data) {
-          console.log("=== 음성 기록 데이터 로드 ===")
-          console.log("총 기록 수:", result.data.length)
-          
-          // 데이터베이스에서 가져온 데이터를 컴포넌트 형식에 맞게 변환
-          const formattedEntries = result.data.map((entry: any) => {
-            console.log(`기록 ID: ${entry.id}, audioFileUrl: ${entry.audioFileUrl}, audioDuration: ${entry.audioDuration}`)
-            return {
-              id: entry.id,
-              type: entry.type,
-              date: new Date(entry.recordedAt).toISOString().split('T')[0],
-              time: new Date(entry.recordedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
-              duration: formatDuration(entry.audioDuration),
-              text: entry.editedText || entry.originalText, // 편집된 텍스트가 있으면 우선 표시
-              audioUrl: entry.audioFileUrl || null,
-              fileName: entry.audioFileName,
-              fileSize: formatFileSize(entry.audioFileSize),
-              language: entry.language,
-              completed: entry.completed,
-              recordedAt: entry.recordedAt, // 원본 타임스탬프 보존
-            }
-          })
-          
-          console.log("변환된 기록:", formattedEntries.map(e => ({ id: e.id, audioUrl: e.audioUrl })))
-          setVoiceEntries(formattedEntries)
-        }
-      } catch (error) {
-        console.error('음성 기록 불러오기 실패:', error)
+  // 음성 기록 불러오기 함수
+  const fetchVoiceEntries = async () => {
+    try {
+      const response = await fetch('/api/voice-entries')
+      if (!response.ok) {
+        throw new Error('Failed to fetch voice entries')
       }
+      
+      const result = await response.json()
+      if (result.success && result.data) {
+        console.log("=== 음성 기록 데이터 로드 ===")
+        console.log("총 기록 수:", result.data.length)
+        
+        // 데이터베이스에서 가져온 데이터를 컴포넌트 형식에 맞게 변환
+        const formattedEntries = result.data.map((entry: any) => {
+          console.log(`기록 ID: ${entry.id}, audioFileUrl: ${entry.audioFileUrl}, audioDuration: ${entry.audioDuration}`)
+          return {
+            id: entry.id,
+            type: entry.type,
+            date: new Date(entry.recordedAt).toISOString().split('T')[0],
+            time: new Date(entry.recordedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+            duration: formatDuration(entry.audioDuration),
+            text: entry.editedText || entry.originalText, // 편집된 텍스트가 있으면 우선 표시
+            audioUrl: entry.audioFileUrl || null,
+            fileName: entry.audioFileName,
+            fileSize: formatFileSize(entry.audioFileSize),
+            language: entry.language,
+            completed: entry.completed,
+            recordedAt: entry.recordedAt, // 원본 타임스탬프 보존
+          }
+        })
+        
+        console.log("변환된 기록:", formattedEntries.map(e => ({ id: e.id, audioUrl: e.audioUrl })))
+        setVoiceEntries(formattedEntries)
+      }
+    } catch (error) {
+      console.error('음성 기록 불러오기 실패:', error)
     }
+  }
 
+  // 페이지 로드 시 모든 데이터 불러오기
+  useEffect(() => {
     fetchVoiceEntries()
     fetchTodayGoals()
     fetchStreakData()
@@ -526,14 +527,15 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
 
       console.log("음성 기록 저장 완료:", result.id)
 
+      // 데이터 새로고침 (순서 중요: 음성 기록 먼저, 그 다음 연속 기록)
+      await fetchVoiceEntries()
+      await fetchStreakData()
+
       // 성공 시 상태 초기화
       setTranscriptionResult(null)
       setEditableText("")
       setUploadedFile(null)
       setTranscriptionProgress("")
-      
-      // 연속 기록 데이터 새로고침
-      await fetchStreakData()
       
       if (fileInputRef.current) {
         fileInputRef.current.value = ""
