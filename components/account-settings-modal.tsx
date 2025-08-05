@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Lock, Camera, Eye, EyeOff, Trash2, AlertTriangle, CheckCircle, Settings, Save, Upload } from "lucide-react"
+import { Camera, Trash2, AlertTriangle, CheckCircle, Settings, Save, Upload } from "lucide-react"
 
 interface AccountSettingsModalProps {
   isOpen: boolean
@@ -46,9 +46,6 @@ export default function AccountSettingsModal({
 }: AccountSettingsModalProps) {
   const [activeTab, setActiveTab] = React.useState("profile")
   const [isLoading, setIsLoading] = React.useState(false)
-  const [showPassword, setShowNewPassword] = React.useState(false)
-  const [showNewPassword, setShowConfirmPassword] = React.useState(false)
-  const [showConfirmPassword, setShowPassword] = React.useState(false)
   const [message, setMessage] = React.useState<{ type: "success" | "error"; text: string } | null>(null)
 
   // 프로필 편집 상태
@@ -57,12 +54,6 @@ export default function AccountSettingsModal({
     email: user.email,
   })
 
-  // 비밀번호 변경 상태
-  const [passwordForm, setPasswordForm] = React.useState({
-    currentPassword: "",
-    newPassword: "",
-    confirmPassword: "",
-  })
 
   // 계정 삭제 확인 상태
   const [deleteConfirmation, setDeleteConfirmation] = React.useState("")
@@ -94,36 +85,6 @@ export default function AccountSettingsModal({
     }
   }
 
-  // 비밀번호 변경
-  const handlePasswordChange = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
-    setMessage(null)
-
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setMessage({ type: "error", text: "새 비밀번호가 일치하지 않습니다." })
-      setIsLoading(false)
-      return
-    }
-
-    if (passwordForm.newPassword.length < 8) {
-      setMessage({ type: "error", text: "비밀번호는 최소 8자 이상이어야 합니다." })
-      setIsLoading(false)
-      return
-    }
-
-    try {
-      // 실제 구현에서는 API 호출
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      setMessage({ type: "success", text: "비밀번호가 성공적으로 변경되었습니다." })
-      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" })
-    } catch (error) {
-      setMessage({ type: "error", text: "비밀번호 변경 중 오류가 발생했습니다." })
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   // 이메일 인증 재발송
   const handleResendVerification = async () => {
@@ -204,7 +165,7 @@ export default function AccountSettingsModal({
             <Settings className="w-5 h-5" />
             계정 설정
           </DialogTitle>
-          <DialogDescription>계정 정보를 관리하고 보안 설정을 변경하세요.</DialogDescription>
+          <DialogDescription>계정 정보를 관리하세요.</DialogDescription>
         </DialogHeader>
 
         {message && (
@@ -215,9 +176,8 @@ export default function AccountSettingsModal({
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 overflow-hidden">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="profile">프로필</TabsTrigger>
-            <TabsTrigger value="security">보안</TabsTrigger>
             <TabsTrigger value="danger">위험 구역</TabsTrigger>
           </TabsList>
 
@@ -344,91 +304,6 @@ export default function AccountSettingsModal({
               </Card>
             </TabsContent>
 
-            <TabsContent value="security" className="space-y-6">
-              {/* 비밀번호 변경 */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Lock className="w-5 h-5" />
-                    비밀번호 변경
-                  </CardTitle>
-                  <CardDescription>보안을 위해 정기적으로 비밀번호를 변경하세요.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form onSubmit={handlePasswordChange} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="current-password">현재 비밀번호</Label>
-                      <div className="relative">
-                        <Input
-                          id="current-password"
-                          type={showPassword ? "text" : "password"}
-                          value={passwordForm.currentPassword}
-                          onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
-                          placeholder="현재 비밀번호를 입력하세요"
-                          required
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                        >
-                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="new-password">새 비밀번호</Label>
-                      <div className="relative">
-                        <Input
-                          id="new-password"
-                          type={showNewPassword ? "text" : "password"}
-                          value={passwordForm.newPassword}
-                          onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                          placeholder="새 비밀번호를 입력하세요 (최소 8자)"
-                          required
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowNewPassword(!showNewPassword)}
-                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                        >
-                          {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="confirm-password">새 비밀번호 확인</Label>
-                      <div className="relative">
-                        <Input
-                          id="confirm-password"
-                          type={showConfirmPassword ? "text" : "password"}
-                          value={passwordForm.confirmPassword}
-                          onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                          placeholder="새 비밀번호를 다시 입력하세요"
-                          required
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                        >
-                          {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="flex justify-end">
-                      <Button type="submit" disabled={isLoading}>
-                        <Lock className="w-4 h-4 mr-2" />
-                        {isLoading ? "변경 중..." : "비밀번호 변경"}
-                      </Button>
-                    </div>
-                  </form>
-                </CardContent>
-              </Card>
-            </TabsContent>
 
             <TabsContent value="danger" className="space-y-6">
               {/* 계정 삭제 */}
