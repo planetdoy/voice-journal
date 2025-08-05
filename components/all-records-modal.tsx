@@ -59,6 +59,10 @@ export default function AllRecordsModal({
 
   // 필터링 및 정렬된 기록
   const filteredAndSortedEntries = React.useMemo(() => {
+    console.log(`=== 전체 기록 정렬 시작 ===`)
+    console.log(`총 기록 수: ${voiceEntries.length}`)
+    console.log(`정렬 순서: ${sortOrder}`)
+    
     let filtered = voiceEntries
 
     // 타입 필터
@@ -75,13 +79,33 @@ export default function AllRecordsModal({
       )
     }
 
-    // 정렬
-    return filtered.sort((a, b) => {
-      const dateA = new Date(`${a.date} ${a.time}`)
-      const dateB = new Date(`${b.date} ${b.time}`)
+    console.log(`필터 후 기록 수: ${filtered.length}`)
 
-      return sortOrder === "newest" ? dateB.getTime() - dateA.getTime() : dateA.getTime() - dateB.getTime()
+    // 정렬
+    const sorted = filtered.sort((a, b) => {
+      // ISO 형식의 날짜 문자열로 변환하여 정확한 비교
+      const dateTimeA = new Date(`${a.date}T${a.time}:00`)
+      const dateTimeB = new Date(`${b.date}T${b.time}:00`)
+
+      // 유효하지 않은 날짜 처리
+      if (isNaN(dateTimeA.getTime()) || isNaN(dateTimeB.getTime())) {
+        console.warn("Invalid date detected:", { a: `${a.date}T${a.time}:00`, b: `${b.date}T${b.time}:00` })
+        return 0
+      }
+
+      const result = sortOrder === "newest" 
+        ? dateTimeB.getTime() - dateTimeA.getTime() 
+        : dateTimeA.getTime() - dateTimeB.getTime()
+
+      return result
     })
+
+    console.log(`정렬 후 첫 3개 기록:`)
+    sorted.slice(0, 3).forEach((entry, index) => {
+      console.log(`${index + 1}. ${entry.date} ${entry.time} - ${entry.text.substring(0, 30)}...`)
+    })
+
+    return sorted
   }, [voiceEntries, filterType, searchTerm, sortOrder])
 
   // 통계 계산
@@ -184,7 +208,11 @@ export default function AllRecordsModal({
           </Select>
           <Button
             variant="outline"
-            onClick={() => setSortOrder(sortOrder === "newest" ? "oldest" : "newest")}
+            onClick={() => {
+              const newOrder = sortOrder === "newest" ? "oldest" : "newest"
+              console.log(`정렬 순서 변경: ${sortOrder} → ${newOrder}`)
+              setSortOrder(newOrder)
+            }}
             className="w-full sm:w-auto"
           >
             <ArrowUpDown className="w-4 h-4 mr-2" />
