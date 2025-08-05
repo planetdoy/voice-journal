@@ -23,6 +23,8 @@ import {
   Loader2,
   AlertCircle,
   Volume2,
+  Edit,
+  Save,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -133,6 +135,15 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
   const [playingAudioUrl, setPlayingAudioUrl] = useState<string | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
 
+  // 음성 변환 후 편집 상태 관리
+  const [transcriptionResult, setTranscriptionResult] = useState<TranscriptionResult | null>(null)
+  const [editableText, setEditableText] = useState("")
+  const [isSaving, setIsSaving] = useState(false)
+
+  // 기록 편집 상태 관리
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
+  const [editingText, setEditingText] = useState("")
+
   // 시간을 분:초 형식으로 변환하는 함수 (소수점 또는 문자열 처리)
   const formatDuration = (duration: string | number | null): string => {
     if (!duration) return "0:00"
@@ -175,7 +186,7 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
               date: new Date(entry.recordedAt).toISOString().split('T')[0],
               time: new Date(entry.recordedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
               duration: formatDuration(entry.audioDuration),
-              text: entry.originalText,
+              text: entry.editedText || entry.originalText, // 편집된 텍스트가 있으면 우선 표시
               audioUrl: entry.audioFileUrl || null,
               fileName: entry.audioFileName,
               fileSize: formatFileSize(entry.audioFileSize),
@@ -352,75 +363,13 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
         throw new Error(result.error || "음성 변환에 실패했습니다.")
       }
 
-      setTranscriptionProgress("변환 완료! 저장 중...")
+      setTranscriptionProgress("변환 완료! 텍스트를 확인하고 수정하세요.")
 
-      // API 응답에서 실제 저장된 데이터 정보를 사용하여 새 항목 생성
-      const newEntry: VoiceEntry = {
-        id: result.id || Date.now().toString(),
-        type: recordingType,
-        date: new Date().toISOString().split("T")[0],
-        time: new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }),
-        duration: typeof result.duration === 'number' ? formatDuration(result.duration) : uploadedFile.duration,
-        text: result.text,
-        audioUrl: null, // S3 URL은 데이터베이스 재조회 시 가져옴
-        fileName: uploadedFile.file.name,
-        fileSize: formatFileSize(uploadedFile.file.size),
-        language: result.language,
-        completed: false,
-      }
-
-      // 목록에 추가 (audioUrl 없이 텍스트만 표시)
-      setVoiceEntries((prev) => [newEntry, ...prev])
-
-      // 데이터베이스에서 전체 목록을 다시 가져와서 S3 URL 포함된 데이터로 업데이트
-      setTimeout(async () => {
-        try {
-          const response = await fetch('/api/voice-entries')
-          if (response.ok) {
-            const result = await response.json()
-            if (result.success && result.data) {
-              console.log("=== 저장 후 목록 업데이트 ===")
-              const formattedEntries = result.data.map((entry: any) => {
-                console.log(`업데이트 기록 ID: ${entry.id}, audioFileUrl: ${entry.audioFileUrl}, audioDuration: ${entry.audioDuration}`)
-                return {
-                  id: entry.id,
-                  type: entry.type,
-                  date: new Date(entry.recordedAt).toISOString().split('T')[0],
-                  time: new Date(entry.recordedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
-                  duration: formatDuration(entry.audioDuration),
-                  text: entry.originalText,
-                  audioUrl: entry.audioFileUrl || null,
-                  fileName: entry.audioFileName,
-                  fileSize: formatFileSize(entry.audioFileSize),
-                  language: entry.language,
-                  completed: entry.completed,
-                }
-              })
-              setVoiceEntries(formattedEntries)
-              console.log("음성 기록 목록 업데이트 완료:", formattedEntries.length, "개")
-            }
-          }
-        } catch (error) {
-          console.error('음성 기록 목록 업데이트 실패:', error)
-        }
-      }, 1000) // 1초 후 업데이트
-
-      // 무료 플랜 사용량 업데이트
-      if (isFreePlan) {
-        setDailyUsage((prev) => ({
-          ...prev,
-          [recordingType === "plan" ? "planCount" : "reflectionCount"]:
-            prev[recordingType === "plan" ? "planCount" : "reflectionCount"] + 1,
-        }))
-      }
-
-      setUploadedFile(null)
-      setTranscriptionProgress("")
-
-      // 파일 입력 초기화
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ""
-      }
+      // 변환 결과를 편집 모드로 설정
+      setTranscriptionResult(result)
+      setEditableText(result.text)
+      
+      console.log("음성 변환 완료. 편집 모드로 전환:", result.text)
     } catch (error: any) {
       console.error("음성 변환 오류:", error)
       setUploadError(error.message || "음성 변환 중 오류가 발생했습니다.")
@@ -447,9 +396,149 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
     setUploadedFile(null)
     setUploadError(null)
     setTranscriptionProgress("")
+    setTranscriptionResult(null)
+    setEditableText("")
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
     }
+  }
+
+  // 변환 결과 저장
+  const handleSaveTranscription = async () => {
+    if (!transcriptionResult || !uploadedFile || !editableText.trim()) return
+
+    setIsSaving(true)
+    try {
+      // 별도의 저장 API 호출
+      const formData = new FormData()
+      formData.append("audio", uploadedFile.file)
+      formData.append("type", recordingType)
+      formData.append("text", editableText.trim()) // 수정된 텍스트
+      formData.append("language", transcriptionResult.language || "ko")
+      formData.append("duration", transcriptionResult.duration?.toString() || "0")
+
+      const response = await fetch("/api/voice-entries/save", {
+        method: "POST",
+        body: formData,
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || "저장에 실패했습니다.")
+      }
+
+      console.log("음성 기록 저장 완료:", result.id)
+
+      // 성공 시 상태 초기화
+      setTranscriptionResult(null)
+      setEditableText("")
+      setUploadedFile(null)
+      setTranscriptionProgress("")
+      
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""
+      }
+
+      // 무료 플랜 사용량 업데이트
+      if (isFreePlan) {
+        setDailyUsage((prev) => ({
+          ...prev,
+          [recordingType === "plan" ? "planCount" : "reflectionCount"]:
+            prev[recordingType === "plan" ? "planCount" : "reflectionCount"] + 1,
+        }))
+      }
+
+      // 목록 새로고침
+      const listResponse = await fetch('/api/voice-entries')
+      if (listResponse.ok) {
+        const listResult = await listResponse.json()
+        if (listResult.success && listResult.data) {
+          const formattedEntries = listResult.data.map((entry: any) => ({
+            id: entry.id,
+            type: entry.type,
+            date: new Date(entry.recordedAt).toISOString().split('T')[0],
+            time: new Date(entry.recordedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+            duration: formatDuration(entry.audioDuration),
+            text: entry.editedText || entry.originalText, // 편집된 텍스트가 있으면 우선 표시
+            audioUrl: entry.audioFileUrl || null,
+            fileName: entry.audioFileName,
+            fileSize: formatFileSize(entry.audioFileSize),
+            language: entry.language,
+            completed: entry.completed,
+          }))
+          setVoiceEntries(formattedEntries)
+        }
+      }
+
+    } catch (error: any) {
+      console.error("저장 오류:", error)
+      setUploadError(error.message || "저장 중 오류가 발생했습니다.")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  // 변환 결과 취소
+  const handleCancelTranscription = () => {
+    setTranscriptionResult(null)
+    setEditableText("")
+    setTranscriptionProgress("")
+    // 파일은 유지하여 다시 변환할 수 있도록 함
+  }
+
+  // 기록 편집 시작
+  const handleStartEdit = (entryId: string, currentText: string) => {
+    setEditingEntryId(entryId)
+    setEditingText(currentText)
+  }
+
+  // 기록 편집 저장
+  const handleSaveEdit = async (entryId: string) => {
+    if (!editingText.trim()) return
+
+    try {
+      const response = await fetch(`/api/voice-entries/${entryId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          editedText: editingText.trim()
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || "저장에 실패했습니다.")
+      }
+
+      // 목록에서 해당 항목 업데이트
+      setVoiceEntries(prev => 
+        prev.map(entry => 
+          entry.id === entryId 
+            ? { ...entry, text: editingText.trim() }
+            : entry
+        )
+      )
+
+      // 편집 모드 종료
+      setEditingEntryId(null)
+      setEditingText("")
+
+      console.log("텍스트 편집 저장 완료:", entryId)
+
+    } catch (error: any) {
+      console.error("편집 저장 오류:", error)
+      alert(error.message || "저장 중 오류가 발생했습니다.")
+    }
+  }
+
+  // 기록 편집 취소
+  const handleCancelEdit = () => {
+    setEditingEntryId(null)
+    setEditingText("")
   }
 
   // 오디오 재생/일시정지 제어
@@ -766,6 +855,75 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
                       </div>
                     </div>
                   </div>
+                ) : transcriptionResult ? (
+                  <div className="bg-green-50 rounded-lg p-6">
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                          <FileAudio className="w-6 h-6 text-green-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900">음성 변환 완료</p>
+                          <p className="text-sm text-gray-500">
+                            {uploadedFile?.file.name} • {formatDuration(transcriptionResult.duration || 0)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700">변환된 텍스트 (수정 가능)</label>
+                        <Textarea 
+                          value={editableText} 
+                          onChange={(e) => setEditableText(e.target.value)}
+                          className="min-h-[120px] resize-none" 
+                          placeholder="변환된 텍스트를 확인하고 필요시 수정하세요..."
+                        />
+                      </div>
+
+                      <div className="flex gap-2">
+                        <Button 
+                          onClick={() => uploadedFile && playAudio(uploadedFile.url)} 
+                          variant="outline"
+                        >
+                          {playingAudioUrl === uploadedFile?.url && isPlaying ? (
+                            <>
+                              <Pause className="w-4 h-4 mr-2" />
+                              일시정지
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-4 h-4 mr-2" />
+                              음성 재생
+                            </>
+                          )}
+                        </Button>
+                        <Button 
+                          onClick={handleSaveTranscription} 
+                          className="bg-purple-600 hover:bg-purple-700"
+                          disabled={isSaving || !editableText.trim()}
+                        >
+                          {isSaving ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              저장 중...
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle className="w-4 h-4 mr-2" />
+                              저장하기
+                            </>
+                          )}
+                        </Button>
+                        <Button 
+                          onClick={handleCancelTranscription} 
+                          variant="outline"
+                        >
+                          <X className="w-4 h-4 mr-2" />
+                          취소
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
                 ) : uploadedFile ? (
                   <div className="bg-green-50 rounded-lg p-6">
                     <div className="space-y-4">
@@ -890,32 +1048,76 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
                             </Badge>
                           )}
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            console.log("기록 재생 시도:", entry.audioUrl, "disabled:", !entry.audioUrl)
-                            if (entry.audioUrl) {
-                              playAudio(entry.audioUrl)
-                            }
-                          }}
-                          disabled={!entry.audioUrl}
-                          title={
-                            !entry.audioUrl 
-                              ? "오디오 파일이 없습니다"
-                              : playingAudioUrl === entry.audioUrl && isPlaying
-                              ? "일시정지"
-                              : "재생"
-                          }
-                        >
-                          {playingAudioUrl === entry.audioUrl && isPlaying ? (
-                            <Pause className="w-4 h-4" />
+                        <div className="flex items-center gap-1">
+                          {editingEntryId === entry.id ? (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleSaveEdit(entry.id)}
+                                disabled={!editingText.trim()}
+                                title="저장"
+                              >
+                                <Save className="w-4 h-4 text-green-600" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={handleCancelEdit}
+                                title="취소"
+                              >
+                                <X className="w-4 h-4 text-red-600" />
+                              </Button>
+                            </>
                           ) : (
-                            <Play className="w-4 h-4" />
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleStartEdit(entry.id, entry.text)}
+                                title="텍스트 편집"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => {
+                                  console.log("기록 재생 시도:", entry.audioUrl, "disabled:", !entry.audioUrl)
+                                  if (entry.audioUrl) {
+                                    playAudio(entry.audioUrl)
+                                  }
+                                }}
+                                disabled={!entry.audioUrl}
+                                title={
+                                  !entry.audioUrl 
+                                    ? "오디오 파일이 없습니다"
+                                    : playingAudioUrl === entry.audioUrl && isPlaying
+                                    ? "일시정지"
+                                    : "재생"
+                                }
+                              >
+                                {playingAudioUrl === entry.audioUrl && isPlaying ? (
+                                  <Pause className="w-4 h-4" />
+                                ) : (
+                                  <Play className="w-4 h-4" />
+                                )}
+                              </Button>
+                            </>
                           )}
-                        </Button>
+                        </div>
                       </div>
-                      <Textarea value={entry.text} readOnly className="min-h-[80px] resize-none" />
+                      {editingEntryId === entry.id ? (
+                        <Textarea 
+                          value={editingText} 
+                          onChange={(e) => setEditingText(e.target.value)}
+                          className="min-h-[80px] resize-none border-blue-300 focus:border-blue-500" 
+                          placeholder="텍스트를 수정하세요..."
+                          autoFocus
+                        />
+                      ) : (
+                        <Textarea value={entry.text} readOnly className="min-h-[80px] resize-none" />
+                      )}
                       <div className="flex justify-between items-center mt-2">
                         {entry.fileSize && <p className="text-xs text-gray-400">파일 크기: {entry.fileSize}</p>}
                         <p className="text-xs text-green-600">✓ AI 변환 완료</p>

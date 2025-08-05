@@ -44,6 +44,72 @@ export async function GET(
   }
 }
 
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    // 사용자 인증 확인
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 })
+    }
+
+    const { editedText } = await request.json()
+    
+    if (!editedText || typeof editedText !== 'string' || !editedText.trim()) {
+      return NextResponse.json({ error: "편집된 텍스트가 필요합니다." }, { status: 400 })
+    }
+
+    // 사용자 정보 조회
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email }
+    })
+
+    if (!user) {
+      return NextResponse.json({ error: "사용자 정보를 찾을 수 없습니다." }, { status: 404 })
+    }
+
+    // 해당 사용자의 음성 기록인지 확인 후 업데이트
+    const updatedEntry = await prisma.voiceEntry.updateMany({
+      where: {
+        id: params.id,
+        userId: user.id
+      },
+      data: {
+        editedText: editedText.trim(),
+        updatedAt: new Date()
+      }
+    })
+
+    if (updatedEntry.count === 0) {
+      return NextResponse.json({ 
+        error: "음성 기록을 찾을 수 없거나 편집 권한이 없습니다." 
+      }, { status: 404 })
+    }
+
+    console.log(`음성 기록 텍스트 편집 완료: ${params.id}`)
+
+    return NextResponse.json({
+      success: true,
+      id: params.id,
+      message: "텍스트가 수정되었습니다."
+    })
+
+  } catch (error: any) {
+    console.error("음성 기록 편집 오류:", error)
+
+    if (error?.code?.startsWith("P")) {
+      return NextResponse.json({ error: "데이터베이스 오류가 발생했습니다." }, { status: 500 })
+    }
+
+    return NextResponse.json({ 
+      error: "텍스트 편집 중 오류가 발생했습니다.",
+      details: error?.message || "알 수 없는 오류"
+    }, { status: 500 })
+  }
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
