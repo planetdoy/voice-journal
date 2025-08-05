@@ -10,6 +10,7 @@ import {
   TrendingUp,
   Calendar,
   Play,
+  Pause,
   Settings,
   LogOut,
   ArrowLeft,
@@ -127,6 +128,11 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
   // 상태 변수에 추가
   const [showAccountSettings, setShowAccountSettings] = useState(false)
 
+  // 오디오 재생 상태 관리
+  const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null)
+  const [playingAudioUrl, setPlayingAudioUrl] = useState<string | null>(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+
   // 페이지 로드 시 음성 기록 불러오기
   useEffect(() => {
     const fetchVoiceEntries = async () => {
@@ -138,21 +144,28 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
         
         const result = await response.json()
         if (result.success && result.data) {
-          // 데이터베이스에서 가져온 데이터를 컴포넌트 형식에 맞게 변환
-          const formattedEntries = result.data.map((entry: any) => ({
-            id: entry.id,
-            type: entry.type,
-            date: new Date(entry.recordedAt).toISOString().split('T')[0],
-            time: new Date(entry.recordedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
-            duration: entry.audioDuration || '0:00',
-            text: entry.originalText,
-            audioUrl: entry.audioFileUrl || null,
-            fileName: entry.audioFileName,
-            fileSize: formatFileSize(entry.audioFileSize),
-            language: entry.language,
-            completed: entry.completed,
-          }))
+          console.log("=== 음성 기록 데이터 로드 ===")
+          console.log("총 기록 수:", result.data.length)
           
+          // 데이터베이스에서 가져온 데이터를 컴포넌트 형식에 맞게 변환
+          const formattedEntries = result.data.map((entry: any) => {
+            console.log(`기록 ID: ${entry.id}, audioFileUrl: ${entry.audioFileUrl}`)
+            return {
+              id: entry.id,
+              type: entry.type,
+              date: new Date(entry.recordedAt).toISOString().split('T')[0],
+              time: new Date(entry.recordedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+              duration: entry.audioDuration || '0:00',
+              text: entry.originalText,
+              audioUrl: entry.audioFileUrl || null,
+              fileName: entry.audioFileName,
+              fileSize: formatFileSize(entry.audioFileSize),
+              language: entry.language,
+              completed: entry.completed,
+            }
+          })
+          
+          console.log("변환된 기록:", formattedEntries.map(e => ({ id: e.id, audioUrl: e.audioUrl })))
           setVoiceEntries(formattedEntries)
         }
       } catch (error) {
@@ -218,6 +231,7 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
     const formData = new FormData()
     formData.append("audio", file)
     formData.append("language", "ko") // 한국어로 설정
+    formData.append("type", recordingType) // 선택한 타입을 전달
 
     const response = await fetch("/api/transcribe", {
       method: "POST",
@@ -321,22 +335,56 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
 
       setTranscriptionProgress("변환 완료! 저장 중...")
 
-      // 새 항목 생성
+      // API 응답에서 실제 저장된 데이터 정보를 사용하여 새 항목 생성
       const newEntry: VoiceEntry = {
-        id: Date.now().toString(),
+        id: result.id || Date.now().toString(),
         type: recordingType,
         date: new Date().toISOString().split("T")[0],
         time: new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }),
-        duration: uploadedFile.duration,
+        duration: result.duration?.toString() || uploadedFile.duration,
         text: result.text,
-        audioUrl: uploadedFile.url,
+        audioUrl: null, // S3 URL은 데이터베이스 재조회 시 가져옴
         fileName: uploadedFile.file.name,
         fileSize: formatFileSize(uploadedFile.file.size),
         language: result.language,
         completed: false,
       }
 
+      // 목록에 추가 (audioUrl 없이 텍스트만 표시)
       setVoiceEntries((prev) => [newEntry, ...prev])
+
+      // 데이터베이스에서 전체 목록을 다시 가져와서 S3 URL 포함된 데이터로 업데이트
+      setTimeout(async () => {
+        try {
+          const response = await fetch('/api/voice-entries')
+          if (response.ok) {
+            const result = await response.json()
+            if (result.success && result.data) {
+              console.log("=== 저장 후 목록 업데이트 ===")
+              const formattedEntries = result.data.map((entry: any) => {
+                console.log(`업데이트 기록 ID: ${entry.id}, audioFileUrl: ${entry.audioFileUrl}`)
+                return {
+                  id: entry.id,
+                  type: entry.type,
+                  date: new Date(entry.recordedAt).toISOString().split('T')[0],
+                  time: new Date(entry.recordedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+                  duration: entry.audioDuration || '0:00',
+                  text: entry.originalText,
+                  audioUrl: entry.audioFileUrl || null,
+                  fileName: entry.audioFileName,
+                  fileSize: formatFileSize(entry.audioFileSize),
+                  language: entry.language,
+                  completed: entry.completed,
+                }
+              })
+              setVoiceEntries(formattedEntries)
+              console.log("음성 기록 목록 업데이트 완료:", formattedEntries.length, "개")
+            }
+          }
+        } catch (error) {
+          console.error('음성 기록 목록 업데이트 실패:', error)
+        }
+      }, 1000) // 1초 후 업데이트
 
       // 무료 플랜 사용량 업데이트
       if (isFreePlan) {
@@ -385,11 +433,108 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
     }
   }
 
-  // 오디오 재생
+  // 오디오 재생/일시정지 제어
   const playAudio = (audioUrl: string) => {
-    const audio = new Audio(audioUrl)
-    audio.play().catch((err) => console.error("오디오 재생 실패:", err))
+    console.log("=== playAudio 호출 ===")
+    console.log("audioUrl:", audioUrl)
+    console.log("playingAudioUrl:", playingAudioUrl)
+    console.log("isPlaying:", isPlaying)
+    console.log("currentAudio exists:", !!currentAudio)
+
+    if (!audioUrl) {
+      console.error("오디오 URL이 없습니다.")
+      return
+    }
+
+    // 현재 재생 중인 오디오가 같은 URL이면 일시정지/재생 토글
+    if (playingAudioUrl === audioUrl && currentAudio) {
+      console.log("같은 오디오 토글 - isPlaying:", isPlaying)
+      if (isPlaying) {
+        currentAudio.pause()
+        setIsPlaying(false)
+        console.log("오디오 일시정지")
+      } else {
+        currentAudio.play()
+          .then(() => {
+            setIsPlaying(true)
+            console.log("오디오 재생 시작")
+          })
+          .catch((err) => {
+            console.error("오디오 재생 실패:", err)
+            setIsPlaying(false)
+          })
+      }
+      return
+    }
+
+    // 다른 오디오가 재생 중이면 먼저 정지
+    if (currentAudio) {
+      console.log("기존 오디오 정지")
+      currentAudio.pause()
+      currentAudio.currentTime = 0
+    }
+
+    console.log("새 오디오 생성 및 재생 시작")
+    // 새 오디오 생성 및 재생
+    const audio = new Audio()
+    
+    // 오디오 이벤트 리스너 추가
+    audio.addEventListener('loadstart', () => console.log("오디오 로딩 시작"))
+    audio.addEventListener('canplay', () => console.log("오디오 재생 가능"))
+    audio.addEventListener('play', () => {
+      console.log("오디오 재생 이벤트 발생")
+      setIsPlaying(true)
+    })
+    audio.addEventListener('pause', () => {
+      console.log("오디오 일시정지 이벤트 발생")
+      setIsPlaying(false)
+    })
+    audio.addEventListener('ended', () => {
+      console.log("오디오 재생 완료")
+      setIsPlaying(false)
+      setPlayingAudioUrl(null)
+      setCurrentAudio(null)
+    })
+    audio.addEventListener('error', (err) => {
+      console.error("오디오 오류 이벤트:", err)
+      console.error("오디오 오류 상세:", audio.error)
+      setIsPlaying(false)
+      setPlayingAudioUrl(null)
+      setCurrentAudio(null)
+    })
+
+    setCurrentAudio(audio)
+    setPlayingAudioUrl(audioUrl)
+    
+    // 오디오 소스 설정
+    audio.src = audioUrl
+    console.log("오디오 소스 설정 완료:", audioUrl)
+    
+    // 재생 시도
+    audio.play()
+      .then(() => {
+        console.log("오디오 재생 성공")
+        setIsPlaying(true)
+      })
+      .catch((err) => {
+        console.error("오디오 재생 실패:", err)
+        console.error("오디오 readyState:", audio.readyState)
+        console.error("오디오 networkState:", audio.networkState)
+        setIsPlaying(false)
+        setPlayingAudioUrl(null)
+        setCurrentAudio(null)
+      })
   }
+
+  // 컴포넌트 언마운트 시 오디오 정리
+  useEffect(() => {
+    return () => {
+      if (currentAudio) {
+        currentAudio.pause()
+        currentAudio.currentTime = 0
+      }
+    }
+  }, [currentAudio])
 
   const [newGoal, setNewGoal] = useState("")
   const [isAddingGoal, setIsAddingGoal] = useState(false)
@@ -628,9 +773,24 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
                       </Alert>
 
                       <div className="flex gap-2">
-                        <Button onClick={() => playAudio(uploadedFile.url)} variant="outline">
-                          <Play className="w-4 h-4 mr-2" />
-                          재생
+                        <Button 
+                          onClick={() => {
+                            console.log("업로드된 파일 재생 시도:", uploadedFile.url)
+                            playAudio(uploadedFile.url)
+                          }} 
+                          variant="outline"
+                        >
+                          {playingAudioUrl === uploadedFile.url && isPlaying ? (
+                            <>
+                              <Pause className="w-4 h-4 mr-2" />
+                              일시정지
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-4 h-4 mr-2" />
+                              재생
+                            </>
+                          )}
                         </Button>
                         <Button onClick={handleTranscription} className="bg-purple-600 hover:bg-purple-700">
                           <Mic className="w-4 h-4 mr-2" />
@@ -714,10 +874,26 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => entry.audioUrl && playAudio(entry.audioUrl)}
+                          onClick={() => {
+                            console.log("기록 재생 시도:", entry.audioUrl, "disabled:", !entry.audioUrl)
+                            if (entry.audioUrl) {
+                              playAudio(entry.audioUrl)
+                            }
+                          }}
                           disabled={!entry.audioUrl}
+                          title={
+                            !entry.audioUrl 
+                              ? "오디오 파일이 없습니다"
+                              : playingAudioUrl === entry.audioUrl && isPlaying
+                              ? "일시정지"
+                              : "재생"
+                          }
                         >
-                          <Play className="w-4 h-4" />
+                          {playingAudioUrl === entry.audioUrl && isPlaying ? (
+                            <Pause className="w-4 h-4" />
+                          ) : (
+                            <Play className="w-4 h-4" />
+                          )}
                         </Button>
                       </div>
                       <Textarea value={entry.text} readOnly className="min-h-[80px] resize-none" />

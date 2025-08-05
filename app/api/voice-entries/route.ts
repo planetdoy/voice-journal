@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth/next"
 import { authOptions } from "../auth/[...nextauth]/route"
 import { prisma } from "@/lib/prisma"
+import { getPresignedUrl, extractFileNameFromKey } from "@/lib/s3"
 
 export async function GET(request: NextRequest) {
   try {
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest) {
         originalText: true,
         editedText: true,
         audioFileName: true,
+        audioFileUrl: true,
         audioFileSize: true,
         audioDuration: true,
         language: true,
@@ -57,6 +59,30 @@ export async function GET(request: NextRequest) {
       }
     })
 
+    // Presigned URL 생성하여 오디오 파일 접근 가능하게 만들기
+    const voiceEntriesWithPresignedUrls = await Promise.all(
+      voiceEntries.map(async (entry) => {
+        if (entry.audioFileUrl) {
+          try {
+            // S3 URL에서 키 추출
+            const urlParts = entry.audioFileUrl.split('.amazonaws.com/')
+            if (urlParts.length > 1) {
+              const s3Key = urlParts[1]
+              const presignedUrl = await getPresignedUrl(s3Key, 3600) // 1시간 유효
+              return {
+                ...entry,
+                audioFileUrl: presignedUrl
+              }
+            }
+          } catch (error) {
+            console.error('Presigned URL 생성 실패:', error)
+            // 실패하면 원본 URL 유지
+          }
+        }
+        return entry
+      })
+    )
+
     // 총 개수 조회
     const totalCount = await prisma.voiceEntry.count({
       where: whereClause
@@ -64,7 +90,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: voiceEntries,
+      data: voiceEntriesWithPresignedUrls,
       pagination: {
         total: totalCount,
         limit,
