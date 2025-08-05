@@ -796,6 +796,9 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
 
   const [newGoal, setNewGoal] = useState("")
   const [isAddingGoal, setIsAddingGoal] = useState(false)
+  
+  // 목표별 로딩 상태 관리
+  const [goalLoadingStates, setGoalLoadingStates] = useState<{[key: string]: boolean}>({})
 
   // 새 목표 추가 함수
   const addNewGoal = async () => {
@@ -831,6 +834,16 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
 
   // 목표 삭제 함수
   const deleteGoal = async (goalId: string) => {
+    // 삭제할 목표 백업
+    const goalToDelete = dailyGoals.find(goal => goal.id === goalId)
+    if (!goalToDelete) return
+
+    // 해당 목표의 로딩 상태 설정
+    setGoalLoadingStates(prev => ({ ...prev, [goalId]: true }))
+    
+    // 낙관적 업데이트 - 즉시 UI에서 제거
+    setDailyGoals(prev => prev.filter(goal => goal.id !== goalId))
+    
     try {
       const response = await fetch(`/api/goals/${goalId}`, {
         method: 'DELETE'
@@ -838,14 +851,24 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
       
       const result = await response.json()
       if (result.success) {
-        // 목표 목록 새로고침
-        await fetchTodayGoals()
         console.log("목표 삭제 완료:", goalId)
+        // 이미 낙관적 업데이트로 제거됨
       } else {
         console.error("목표 삭제 실패:", result.error)
+        // 실패 시 목표 복원
+        setDailyGoals(prev => [...prev, goalToDelete])
       }
     } catch (error) {
       console.error("목표 삭제 오류:", error)
+      // 에러 시 목표 복원
+      setDailyGoals(prev => [...prev, goalToDelete])
+    } finally {
+      // 로딩 상태 해제
+      setGoalLoadingStates(prev => {
+        const newState = { ...prev }
+        delete newState[goalId]
+        return newState
+      })
     }
   }
 
@@ -864,6 +887,17 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
     const currentGoal = dailyGoals.find(goal => goal.id === goalId)
     if (!currentGoal) return
     
+    // 해당 목표의 로딩 상태 설정
+    setGoalLoadingStates(prev => ({ ...prev, [goalId]: true }))
+    
+    // 낙관적 업데이트 - 즉시 UI 반영
+    const newCompletedState = !currentGoal.completed
+    setDailyGoals(prev => prev.map(goal => 
+      goal.id === goalId 
+        ? { ...goal, completed: newCompletedState }
+        : goal
+    ))
+    
     try {
       const response = await fetch(`/api/goals/${goalId}`, {
         method: 'PATCH',
@@ -871,20 +905,34 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          completed: !currentGoal.completed
+          completed: newCompletedState
         })
       })
       
       const result = await response.json()
       if (result.success) {
-        // 목표 목록 새로고침
-        await fetchTodayGoals()
-        console.log("목표 완료 상태 변경:", goalId, !currentGoal.completed)
+        console.log("목표 완료 상태 변경 성공:", goalId, newCompletedState)
+        // 서버 응답으로 최종 확인 (이미 낙관적 업데이트로 반영됨)
       } else {
         console.error("목표 상태 변경 실패:", result.error)
+        // 실패 시 원래 상태로 롤백
+        setDailyGoals(prev => prev.map(goal => 
+          goal.id === goalId 
+            ? { ...goal, completed: currentGoal.completed }
+            : goal
+        ))
       }
     } catch (error) {
       console.error("목표 상태 변경 오류:", error)
+      // 에러 시 원래 상태로 롤백
+      setDailyGoals(prev => prev.map(goal => 
+        goal.id === goalId 
+          ? { ...goal, completed: currentGoal.completed }
+          : goal
+      ))
+    } finally {
+      // 로딩 상태 해제
+      setGoalLoadingStates(prev => ({ ...prev, [goalId]: false }))
     }
   }
 
@@ -1469,14 +1517,26 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
                   {/* 기존 목표 리스트 */}
                   {dailyGoals.map((goal) => (
                     <div key={goal.id} className="flex items-center gap-3 group">
-                      <button onClick={() => toggleGoalCompletion(goal.id)}>
-                        {goal.completed ? (
+                      <button 
+                        onClick={() => toggleGoalCompletion(goal.id)}
+                        disabled={goalLoadingStates[goal.id]}
+                        className="relative"
+                      >
+                        {goalLoadingStates[goal.id] ? (
+                          <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+                        ) : goal.completed ? (
                           <CheckCircle className="w-5 h-5 text-green-600" />
                         ) : (
-                          <Circle className="w-5 h-5 text-gray-400" />
+                          <Circle className="w-5 h-5 text-gray-400 hover:text-gray-600 transition-colors" />
                         )}
                       </button>
-                      <span className={`flex-1 ${goal.completed ? "line-through text-gray-500" : ""}`}>
+                      <span className={`flex-1 transition-all duration-200 ${
+                        goal.completed 
+                          ? "line-through text-gray-500" 
+                          : goalLoadingStates[goal.id] 
+                            ? "text-gray-400" 
+                            : ""
+                      }`}>
                         {goal.text}
                       </span>
                       <Button
@@ -1484,8 +1544,13 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
                         size="icon"
                         className="opacity-0 group-hover:opacity-100 transition-opacity"
                         onClick={() => deleteGoal(goal.id)}
+                        disabled={goalLoadingStates[goal.id]}
                       >
-                        <X className="w-3 h-3 text-red-500" />
+                        {goalLoadingStates[goal.id] ? (
+                          <Loader2 className="w-3 h-3 animate-spin text-gray-400" />
+                        ) : (
+                          <X className="w-3 h-3 text-red-500" />
+                        )}
                       </Button>
                     </div>
                   ))}
