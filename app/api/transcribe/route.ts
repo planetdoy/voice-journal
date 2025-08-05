@@ -9,6 +9,15 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
+// 초 단위 시간을 분:초 형식으로 변환하는 함수
+function formatDuration(seconds: number): string {
+  if (!seconds || seconds <= 0) return "0:00"
+  
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = Math.floor(seconds % 60)
+  return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`
+}
+
 export async function POST(request: NextRequest) {
   try {
     console.log("=== 음성 변환 API 호출 시작 ===")
@@ -100,7 +109,7 @@ export async function POST(request: NextRequest) {
         audioFileName: file.name,
         audioFileUrl: audioFileUrl,
         audioFileSize: file.size,
-        audioDuration: transcription.duration?.toString() || "0",
+        audioDuration: formatDuration(transcription.duration || 0),
         language: transcription.language || language,
         confidence: transcription.segments?.[0]?.avg_logprob || null,
         recordedAt: new Date(),

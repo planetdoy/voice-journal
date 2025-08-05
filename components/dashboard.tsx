@@ -335,13 +335,21 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
 
       setTranscriptionProgress("변환 완료! 저장 중...")
 
+      // 초 단위를 분:초 형식으로 변환하는 함수
+      const formatDurationFromSeconds = (seconds: number): string => {
+        if (!seconds || seconds <= 0) return "0:00"
+        const minutes = Math.floor(seconds / 60)
+        const remainingSeconds = Math.floor(seconds % 60)
+        return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`
+      }
+
       // API 응답에서 실제 저장된 데이터 정보를 사용하여 새 항목 생성
       const newEntry: VoiceEntry = {
         id: result.id || Date.now().toString(),
         type: recordingType,
         date: new Date().toISOString().split("T")[0],
         time: new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }),
-        duration: result.duration?.toString() || uploadedFile.duration,
+        duration: typeof result.duration === 'number' ? formatDurationFromSeconds(result.duration) : uploadedFile.duration,
         text: result.text,
         audioUrl: null, // S3 URL은 데이터베이스 재조회 시 가져옴
         fileName: uploadedFile.file.name,
