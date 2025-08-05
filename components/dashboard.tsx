@@ -58,6 +58,7 @@ interface VoiceEntry {
   completed?: boolean
   language?: string
   confidence?: number
+  recordedAt?: string // 원본 타임스탬프 추가
 }
 
 interface DailyGoal {
@@ -192,6 +193,7 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
               fileSize: formatFileSize(entry.audioFileSize),
               language: entry.language,
               completed: entry.completed,
+              recordedAt: entry.recordedAt, // 원본 타임스탬프 보존
             }
           })
           
@@ -466,6 +468,7 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
             fileSize: formatFileSize(entry.audioFileSize),
             language: entry.language,
             completed: entry.completed,
+            recordedAt: entry.recordedAt, // 원본 타임스탬프 보존
           }))
           setVoiceEntries(formattedEntries)
         }

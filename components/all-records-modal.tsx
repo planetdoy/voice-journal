@@ -35,6 +35,7 @@ interface VoiceEntry {
   completed?: boolean
   language?: string
   confidence?: number
+  recordedAt?: string // 원본 타임스탬프 추가
 }
 
 interface AllRecordsModalProps {
@@ -81,23 +82,32 @@ export default function AllRecordsModal({
 
     console.log(`필터 후 기록 수: ${filtered.length}`)
 
-    // 정렬
+    // 정렬 - recordedAt 타임스탬프 사용
     const sorted = filtered.sort((a, b) => {
-      // ISO 형식의 날짜 문자열로 변환하여 정확한 비교
+      // recordedAt이 있으면 사용, 없으면 fallback
+      if (a.recordedAt && b.recordedAt) {
+        const timeA = new Date(a.recordedAt).getTime()
+        const timeB = new Date(b.recordedAt).getTime()
+        
+        console.log(`Comparing: ${a.recordedAt} (${timeA}) vs ${b.recordedAt} (${timeB})`)
+        
+        return sortOrder === "newest" 
+          ? timeB - timeA  // 최신순: 큰 값(최근) - 작은 값(과거) = 양수 (b가 앞으로)
+          : timeA - timeB  // 오래된순: 작은 값(과거) - 큰 값(최근) = 음수 (a가 앞으로)
+      }
+      
+      // fallback: 날짜/시간 문자열 조합 사용
       const dateTimeA = new Date(`${a.date}T${a.time}:00`)
       const dateTimeB = new Date(`${b.date}T${b.time}:00`)
 
-      // 유효하지 않은 날짜 처리
       if (isNaN(dateTimeA.getTime()) || isNaN(dateTimeB.getTime())) {
         console.warn("Invalid date detected:", { a: `${a.date}T${a.time}:00`, b: `${b.date}T${b.time}:00` })
         return 0
       }
 
-      const result = sortOrder === "newest" 
+      return sortOrder === "newest" 
         ? dateTimeB.getTime() - dateTimeA.getTime() 
         : dateTimeA.getTime() - dateTimeB.getTime()
-
-      return result
     })
 
     console.log(`정렬 후 첫 3개 기록:`)
