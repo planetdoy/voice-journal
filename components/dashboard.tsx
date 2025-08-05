@@ -115,6 +115,14 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
     thisMonthRecords: 0
   })
 
+  // 로딩 상태 관리
+  const [loadingStates, setLoadingStates] = useState({
+    voiceEntries: false,
+    goals: false,
+    streak: false,
+    initialLoad: true
+  })
+
   // 실시간 목표 달성률 계산
   const todayStats = useMemo(() => {
     const totalGoals = dailyGoals.length
@@ -156,6 +164,22 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
       thisMonthRecords: streakData.thisMonthRecords
     }
   }, [voiceEntries, todayStats, streakData])
+
+  // 스켈레톤 로더 컴포넌트
+  const SkeletonCard = ({ children }: { children?: React.ReactNode }) => (
+    <Card>
+      <CardContent className="p-6">
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <div className="flex items-center justify-center h-16">
+              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+            </div>
+          </div>
+          {children}
+        </div>
+      </CardContent>
+    </Card>
+  )
 
   // 상태 변수 추가
   const [dailyUsage, setDailyUsage] = useState({
@@ -209,6 +233,8 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
   // 오늘 목표 불러오기 함수
   const fetchTodayGoals = async () => {
     try {
+      setLoadingStates(prev => ({ ...prev, goals: true }))
+      
       const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
       const response = await fetch(`/api/goals?date=${today}`)
       const result = await response.json()
@@ -235,12 +261,16 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
       }
     } catch (error) {
       console.error('목표 불러오기 실패:', error)
+    } finally {
+      setLoadingStates(prev => ({ ...prev, goals: false }))
     }
   }
 
   // 연속 기록 데이터 불러오기 함수
   const fetchStreakData = async () => {
     try {
+      setLoadingStates(prev => ({ ...prev, streak: true }))
+      
       const response = await fetch('/api/stats/streak')
       const result = await response.json()
       
@@ -253,12 +283,16 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
       }
     } catch (error) {
       console.error('연속 기록 불러오기 실패:', error)
+    } finally {
+      setLoadingStates(prev => ({ ...prev, streak: false }))
     }
   }
 
   // 음성 기록 불러오기 함수
   const fetchVoiceEntries = async () => {
     try {
+      setLoadingStates(prev => ({ ...prev, voiceEntries: true }))
+      
       const response = await fetch('/api/voice-entries')
       if (!response.ok) {
         throw new Error('Failed to fetch voice entries')
@@ -293,14 +327,28 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
       }
     } catch (error) {
       console.error('음성 기록 불러오기 실패:', error)
+    } finally {
+      setLoadingStates(prev => ({ ...prev, voiceEntries: false }))
     }
   }
 
   // 페이지 로드 시 모든 데이터 불러오기
   useEffect(() => {
-    fetchVoiceEntries()
-    fetchTodayGoals()
-    fetchStreakData()
+    const loadAllData = async () => {
+      try {
+        await Promise.all([
+          fetchVoiceEntries(),
+          fetchTodayGoals(),
+          fetchStreakData()
+        ])
+      } catch (error) {
+        console.error('데이터 로딩 오류:', error)
+      } finally {
+        setLoadingStates(prev => ({ ...prev, initialLoad: false }))
+      }
+    }
+    
+    loadAllData()
   }, [])
 
   // 지원되는 오디오 파일 형식
@@ -913,101 +961,129 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Quick Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">오늘 목표 달성률</p>
-                  <p className="text-2xl font-bold text-purple-600">{todayStats.goalAchievement}%</p>
+          {/* 목표 달성률 카드 */}
+          {loadingStates.goals || loadingStates.initialLoad ? (
+            <SkeletonCard>
+              <Target className="w-8 h-8 text-gray-300" />
+            </SkeletonCard>
+          ) : (
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">오늘 목표 달성률</p>
+                    <p className="text-2xl font-bold text-purple-600">{todayStats.goalAchievement}%</p>
+                  </div>
+                  <Target className="w-8 h-8 text-purple-600" />
                 </div>
-                <Target className="w-8 h-8 text-purple-600" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>완료된 목표</span>
-                  <span>{todayStats.completedGoals}/{todayStats.totalGoals}</span>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>완료된 목표</span>
+                    <span>{todayStats.completedGoals}/{todayStats.totalGoals}</span>
+                  </div>
+                  <Progress value={todayStats.goalAchievement} className="h-1.5" />
+                  <div className="text-xs text-gray-500">
+                    {todayStats.totalGoals === 0 ? "오늘의 목표를 설정해보세요!" : 
+                     todayStats.completedGoals === todayStats.totalGoals ? "🎉 모든 목표 완료!" :
+                     `${todayStats.totalGoals - todayStats.completedGoals}개 목표 남음`}
+                  </div>
                 </div>
-                <Progress value={todayStats.goalAchievement} className="h-1.5" />
-                <div className="text-xs text-gray-500">
-                  {todayStats.totalGoals === 0 ? "오늘의 목표를 설정해보세요!" : 
-                   todayStats.completedGoals === todayStats.totalGoals ? "🎉 모든 목표 완료!" :
-                   `${todayStats.totalGoals - todayStats.completedGoals}개 목표 남음`}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
 
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">총 음성 기록</p>
-                  <p className="text-2xl font-bold text-blue-600">{weeklyStats.totalEntries}개</p>
+          {/* 음성 기록 카드 */}
+          {loadingStates.voiceEntries || loadingStates.initialLoad ? (
+            <SkeletonCard>
+              <History className="w-8 h-8 text-gray-300" />
+            </SkeletonCard>
+          ) : (
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">총 음성 기록</p>
+                    <p className="text-2xl font-bold text-blue-600">{weeklyStats.totalEntries}개</p>
+                  </div>
+                  <History className="w-8 h-8 text-blue-600" />
                 </div>
-                <History className="w-8 h-8 text-blue-600" />
-              </div>
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>계획</span>
-                  <span>{todayStats.planEntries}개</span>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>계획</span>
+                    <span>{todayStats.planEntries}개</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>회고</span>
+                    <span>{todayStats.reflectionEntries}개</span>
+                  </div>
                 </div>
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>회고</span>
-                  <span>{todayStats.reflectionEntries}개</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
 
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">연속 기록</p>
-                  <p className="text-2xl font-bold text-green-600">{weeklyStats.currentStreak}일</p>
+          {/* 연속 기록 카드 */}
+          {loadingStates.streak || loadingStates.initialLoad ? (
+            <SkeletonCard>
+              <Calendar className="w-8 h-8 text-gray-300" />
+            </SkeletonCard>
+          ) : (
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">연속 기록</p>
+                    <p className="text-2xl font-bold text-green-600">{weeklyStats.currentStreak}일</p>
+                  </div>
+                  <Calendar className="w-8 h-8 text-green-600" />
                 </div>
-                <Calendar className="w-8 h-8 text-green-600" />
-              </div>
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>최장 기록</span>
-                  <span>{weeklyStats.longestStreak}일</span>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>최장 기록</span>
+                    <span>{weeklyStats.longestStreak}일</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>상태</span>
+                    <span className={`font-medium ${
+                      streakData.streakStatus === 'active' ? 'text-green-600' :
+                      streakData.streakStatus === 'broken' ? 'text-orange-600' : 'text-gray-400'
+                    }`}>
+                      {streakData.streakStatus === 'active' ? '🔥 활성' :
+                       streakData.streakStatus === 'broken' ? '⏳ 중단' : '📝 시작 대기'}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>상태</span>
-                  <span className={`font-medium ${
-                    streakData.streakStatus === 'active' ? 'text-green-600' :
-                    streakData.streakStatus === 'broken' ? 'text-orange-600' : 'text-gray-400'
-                  }`}>
-                    {streakData.streakStatus === 'active' ? '🔥 활성' :
-                     streakData.streakStatus === 'broken' ? '⏳ 중단' : '📝 시작 대기'}
-                  </span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
 
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">이번 주 활동</p>
-                  <p className="text-2xl font-bold text-orange-600">{weeklyStats.thisWeekRecords}개</p>
+          {/* 활동 통계 카드 */}
+          {loadingStates.streak || loadingStates.initialLoad ? (
+            <SkeletonCard>
+              <TrendingUp className="w-8 h-8 text-gray-300" />
+            </SkeletonCard>
+          ) : (
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">이번 주 활동</p>
+                    <p className="text-2xl font-bold text-orange-600">{weeklyStats.thisWeekRecords}개</p>
+                  </div>
+                  <TrendingUp className="w-8 h-8 text-orange-600" />
                 </div>
-                <TrendingUp className="w-8 h-8 text-orange-600" />
-              </div>
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>이번 달</span>
-                  <span>{weeklyStats.thisMonthRecords}개</span>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>이번 달</span>
+                    <span>{weeklyStats.thisMonthRecords}개</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>활동 점수</span>
+                    <span className="font-medium text-orange-600">+{weeklyStats.thisWeekImprovement}%</span>
+                  </div>
                 </div>
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>활동 점수</span>
-                  <span className="font-medium text-orange-600">+{weeklyStats.thisWeekImprovement}%</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -1236,8 +1312,19 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
                 <CardDescription>AI로 변환된 음성 텍스트를 확인하세요.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {voiceEntries.slice(0, 3).map((entry) => (
+                {loadingStates.voiceEntries || loadingStates.initialLoad ? (
+                  <div className="space-y-4">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="border rounded-lg p-4">
+                        <div className="flex items-center justify-center h-16">
+                          <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {voiceEntries.slice(0, 3).map((entry) => (
                     <div key={entry.id} className="border rounded-lg p-4">
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center gap-3 flex-wrap">
@@ -1331,7 +1418,8 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
                       </div>
                     </div>
                   ))}
-                </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
