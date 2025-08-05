@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import {
   Mic,
   History,
@@ -65,7 +65,13 @@ interface DailyGoal {
   id: string
   text: string
   completed: boolean
+  priority: "low" | "medium" | "high"
+  category?: string | null
+  estimatedMinutes?: number | null
+  targetDate: string
+  completedAt?: string | null
   createdAt: string
+  updatedAt: string
 }
 
 interface UploadedFile {
@@ -93,27 +99,46 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const [dailyGoals, setDailyGoals] = useState<DailyGoal[]>([
-    { id: "1", text: "아침 운동 30분", completed: true, createdAt: "2024-01-15" },
-    { id: "2", text: "프로젝트 기획서 작성", completed: false, createdAt: "2024-01-15" },
-    { id: "3", text: "독서 1시간", completed: false, createdAt: "2024-01-15" },
-  ])
+  const [dailyGoals, setDailyGoals] = useState<DailyGoal[]>([])
 
   const [voiceEntries, setVoiceEntries] = useState<VoiceEntry[]>([])
 
-  const todayStats = {
-    planCompleted: 1,
-    totalPlans: 2,
-    reflectionDone: 1,
-    goalAchievement: 33,
-  }
+  // 실시간 목표 달성률 계산
+  const todayStats = useMemo(() => {
+    const totalGoals = dailyGoals.length
+    const completedGoals = dailyGoals.filter(goal => goal.completed).length
+    const goalAchievement = totalGoals > 0 ? Math.round((completedGoals / totalGoals) * 100) : 0
+    
+    const planEntries = voiceEntries.filter(entry => entry.type === 'plan').length
+    const reflectionEntries = voiceEntries.filter(entry => entry.type === 'reflection').length
+    
+    return {
+      totalGoals,
+      completedGoals,
+      goalAchievement,
+      planEntries,
+      reflectionEntries
+    }
+  }, [dailyGoals, voiceEntries])
 
-  const weeklyStats = {
-    totalEntries: 12,
-    avgGoalAchievement: 78,
-    longestStreak: 5,
-    thisWeekImprovement: 15,
-  }
+  // 주간 통계 계산 (현재는 오늘 기준으로, 추후 확장 가능)
+  const weeklyStats = useMemo(() => {
+    const totalEntries = voiceEntries.length
+    const avgGoalAchievement = todayStats.goalAchievement
+    
+    // 연속 기록 일수 계산 (현재는 기본값, 추후 구현 가능)
+    const longestStreak = totalEntries > 0 ? Math.min(totalEntries, 7) : 0
+    
+    // 성장률 계산 (현재는 목표 달성률 기반) 
+    const thisWeekImprovement = Math.max(0, todayStats.goalAchievement - 50)
+    
+    return {
+      totalEntries,
+      avgGoalAchievement,
+      longestStreak,
+      thisWeekImprovement
+    }
+  }, [voiceEntries, todayStats])
 
   // 상태 변수 추가
   const [dailyUsage, setDailyUsage] = useState({
@@ -164,7 +189,39 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
     return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`
   }
 
-  // 페이지 로드 시 음성 기록 불러오기
+  // 오늘 목표 불러오기 함수
+  const fetchTodayGoals = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
+      const response = await fetch(`/api/goals?date=${today}`)
+      const result = await response.json()
+      
+      if (result.success && result.data) {
+        console.log("=== 오늘 목표 데이터 로드 ===")
+        console.log("총 목표 수:", result.data.length)
+        
+        // API 응답을 컴포넌트 형식에 맞게 변환
+        const formattedGoals = result.data.map((goal: any) => ({
+          id: goal.id,
+          text: goal.text,
+          completed: goal.completed,
+          priority: goal.priority,
+          category: goal.category,
+          estimatedMinutes: goal.estimatedMinutes,
+          targetDate: new Date(goal.targetDate).toISOString().split('T')[0],
+          completedAt: goal.completedAt,
+          createdAt: new Date(goal.createdAt).toISOString().split('T')[0],
+          updatedAt: new Date(goal.updatedAt).toISOString().split('T')[0]
+        }))
+        
+        setDailyGoals(formattedGoals)
+      }
+    } catch (error) {
+      console.error('목표 불러오기 실패:', error)
+    }
+  }
+
+  // 페이지 로드 시 음성 기록 및 목표 불러오기
   useEffect(() => {
     const fetchVoiceEntries = async () => {
       try {
@@ -206,6 +263,7 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
     }
 
     fetchVoiceEntries()
+    fetchTodayGoals()
   }, [])
 
   // 지원되는 오디오 파일 형식
@@ -651,23 +709,55 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
   const [isAddingGoal, setIsAddingGoal] = useState(false)
 
   // 새 목표 추가 함수
-  const addNewGoal = () => {
+  const addNewGoal = async () => {
     if (newGoal.trim()) {
-      const goal: DailyGoal = {
-        id: Date.now().toString(),
-        text: newGoal.trim(),
-        completed: false,
-        createdAt: new Date().toISOString().split("T")[0],
+      try {
+        const response = await fetch('/api/goals', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            text: newGoal.trim(),
+            priority: "medium", // 기본 우선순위
+            targetDate: new Date().toISOString() // 오늘
+          })
+        })
+        
+        const result = await response.json()
+        if (result.success && result.data) {
+          // 목표 목록 새로고침
+          await fetchTodayGoals()
+          setNewGoal("")
+          setIsAddingGoal(false)
+          console.log("새 목표 추가 완료:", result.data.text)
+        } else {
+          console.error("목표 추가 실패:", result.error)
+        }
+      } catch (error) {
+        console.error("목표 추가 오류:", error)
       }
-      setDailyGoals((prev) => [...prev, goal])
-      setNewGoal("")
-      setIsAddingGoal(false)
     }
   }
 
   // 목표 삭제 함수
-  const deleteGoal = (goalId: string) => {
-    setDailyGoals((prev) => prev.filter((goal) => goal.id !== goalId))
+  const deleteGoal = async (goalId: string) => {
+    try {
+      const response = await fetch(`/api/goals/${goalId}`, {
+        method: 'DELETE'
+      })
+      
+      const result = await response.json()
+      if (result.success) {
+        // 목표 목록 새로고침
+        await fetchTodayGoals()
+        console.log("목표 삭제 완료:", goalId)
+      } else {
+        console.error("목표 삭제 실패:", result.error)
+      }
+    } catch (error) {
+      console.error("목표 삭제 오류:", error)
+    }
   }
 
   // Enter 키 처리
@@ -680,8 +770,33 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
     }
   }
 
-  const toggleGoalCompletion = (goalId: string) => {
-    setDailyGoals((prev) => prev.map((goal) => (goal.id === goalId ? { ...goal, completed: !goal.completed } : goal)))
+  const toggleGoalCompletion = async (goalId: string) => {
+    // 현재 완료 상태 찾기
+    const currentGoal = dailyGoals.find(goal => goal.id === goalId)
+    if (!currentGoal) return
+    
+    try {
+      const response = await fetch(`/api/goals/${goalId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          completed: !currentGoal.completed
+        })
+      })
+      
+      const result = await response.json()
+      if (result.success) {
+        // 목표 목록 새로고침
+        await fetchTodayGoals()
+        console.log("목표 완료 상태 변경:", goalId, !currentGoal.completed)
+      } else {
+        console.error("목표 상태 변경 실패:", result.error)
+      }
+    } catch (error) {
+      console.error("목표 상태 변경 오류:", error)
+    }
   }
 
   // 필터링 및 정렬된 기록 가져오기 함수 추가
@@ -759,24 +874,46 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card>
             <CardContent className="p-6">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between mb-3">
                 <div>
                   <p className="text-sm font-medium text-gray-600">오늘 목표 달성률</p>
                   <p className="text-2xl font-bold text-purple-600">{todayStats.goalAchievement}%</p>
                 </div>
                 <Target className="w-8 h-8 text-purple-600" />
               </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>완료된 목표</span>
+                  <span>{todayStats.completedGoals}/{todayStats.totalGoals}</span>
+                </div>
+                <Progress value={todayStats.goalAchievement} className="h-1.5" />
+                <div className="text-xs text-gray-500">
+                  {todayStats.totalGoals === 0 ? "오늘의 목표를 설정해보세요!" : 
+                   todayStats.completedGoals === todayStats.totalGoals ? "🎉 모든 목표 완료!" :
+                   `${todayStats.totalGoals - todayStats.completedGoals}개 목표 남음`}
+                </div>
+              </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardContent className="p-6">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between mb-3">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">이번 주 기록</p>
+                  <p className="text-sm font-medium text-gray-600">총 음성 기록</p>
                   <p className="text-2xl font-bold text-blue-600">{weeklyStats.totalEntries}개</p>
                 </div>
                 <History className="w-8 h-8 text-blue-600" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>계획</span>
+                  <span>{todayStats.planEntries}개</span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>회고</span>
+                  <span>{todayStats.reflectionEntries}개</span>
+                </div>
               </div>
             </CardContent>
           </Card>
