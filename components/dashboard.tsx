@@ -102,6 +102,18 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
   const [dailyGoals, setDailyGoals] = useState<DailyGoal[]>([])
 
   const [voiceEntries, setVoiceEntries] = useState<VoiceEntry[]>([])
+  
+  // 연속 기록 상태 추가
+  const [streakData, setStreakData] = useState({
+    currentStreak: 0,
+    longestStreak: 0,
+    lastRecordDate: null as string | null,
+    streakStatus: 'none' as 'active' | 'broken' | 'none',
+    totalRecords: 0,
+    uniqueDays: 0,
+    thisWeekRecords: 0,
+    thisMonthRecords: 0
+  })
 
   // 실시간 목표 달성률 계산
   const todayStats = useMemo(() => {
@@ -121,24 +133,29 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
     }
   }, [dailyGoals, voiceEntries])
 
-  // 주간 통계 계산 (현재는 오늘 기준으로, 추후 확장 가능)
+  // 주간 통계 계산 (연속 기록 데이터 포함)
   const weeklyStats = useMemo(() => {
     const totalEntries = voiceEntries.length
     const avgGoalAchievement = todayStats.goalAchievement
     
-    // 연속 기록 일수 계산 (현재는 기본값, 추후 구현 가능)
-    const longestStreak = totalEntries > 0 ? Math.min(totalEntries, 7) : 0
+    // 실제 연속 기록 데이터 사용
+    const currentStreak = streakData.currentStreak
+    const longestStreak = streakData.longestStreak
     
-    // 성장률 계산 (현재는 목표 달성률 기반) 
-    const thisWeekImprovement = Math.max(0, todayStats.goalAchievement - 50)
+    // 성장률 계산 (이번 주 기록 수 기반) 
+    const thisWeekImprovement = streakData.thisWeekRecords > 0 ? 
+      Math.min(streakData.thisWeekRecords * 10, 100) : 0
     
     return {
       totalEntries,
       avgGoalAchievement,
+      currentStreak,
       longestStreak,
-      thisWeekImprovement
+      thisWeekImprovement,
+      thisWeekRecords: streakData.thisWeekRecords,
+      thisMonthRecords: streakData.thisMonthRecords
     }
-  }, [voiceEntries, todayStats])
+  }, [voiceEntries, todayStats, streakData])
 
   // 상태 변수 추가
   const [dailyUsage, setDailyUsage] = useState({
@@ -221,6 +238,24 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
     }
   }
 
+  // 연속 기록 데이터 불러오기 함수
+  const fetchStreakData = async () => {
+    try {
+      const response = await fetch('/api/stats/streak')
+      const result = await response.json()
+      
+      if (result.success && result.data) {
+        console.log("=== 연속 기록 데이터 로드 ===")
+        console.log("현재 연속:", result.data.currentStreak)
+        console.log("최장 연속:", result.data.longestStreak)
+        
+        setStreakData(result.data)
+      }
+    } catch (error) {
+      console.error('연속 기록 불러오기 실패:', error)
+    }
+  }
+
   // 페이지 로드 시 음성 기록 및 목표 불러오기
   useEffect(() => {
     const fetchVoiceEntries = async () => {
@@ -264,6 +299,7 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
 
     fetchVoiceEntries()
     fetchTodayGoals()
+    fetchStreakData()
   }, [])
 
   // 지원되는 오디오 파일 형식
@@ -495,6 +531,9 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
       setEditableText("")
       setUploadedFile(null)
       setTranscriptionProgress("")
+      
+      // 연속 기록 데이터 새로고침
+      await fetchStreakData()
       
       if (fileInputRef.current) {
         fileInputRef.current.value = ""
@@ -920,24 +959,50 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
 
           <Card>
             <CardContent className="p-6">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between mb-3">
                 <div>
                   <p className="text-sm font-medium text-gray-600">연속 기록</p>
-                  <p className="text-2xl font-bold text-green-600">{weeklyStats.longestStreak}일</p>
+                  <p className="text-2xl font-bold text-green-600">{weeklyStats.currentStreak}일</p>
                 </div>
                 <Calendar className="w-8 h-8 text-green-600" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>최장 기록</span>
+                  <span>{weeklyStats.longestStreak}일</span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>상태</span>
+                  <span className={`font-medium ${
+                    streakData.streakStatus === 'active' ? 'text-green-600' :
+                    streakData.streakStatus === 'broken' ? 'text-orange-600' : 'text-gray-400'
+                  }`}>
+                    {streakData.streakStatus === 'active' ? '🔥 활성' :
+                     streakData.streakStatus === 'broken' ? '⏳ 중단' : '📝 시작 대기'}
+                  </span>
+                </div>
               </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardContent className="p-6">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between mb-3">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">이번 주 성장률</p>
-                  <p className="text-2xl font-bold text-orange-600">+{weeklyStats.thisWeekImprovement}%</p>
+                  <p className="text-sm font-medium text-gray-600">이번 주 활동</p>
+                  <p className="text-2xl font-bold text-orange-600">{weeklyStats.thisWeekRecords}개</p>
                 </div>
                 <TrendingUp className="w-8 h-8 text-orange-600" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>이번 달</span>
+                  <span>{weeklyStats.thisMonthRecords}개</span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>활동 점수</span>
+                  <span className="font-medium text-orange-600">+{weeklyStats.thisWeekImprovement}%</span>
+                </div>
               </div>
             </CardContent>
           </Card>
