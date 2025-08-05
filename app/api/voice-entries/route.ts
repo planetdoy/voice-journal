@@ -4,6 +4,25 @@ import { authOptions } from "../auth/[...nextauth]/route"
 import { prisma } from "@/lib/prisma"
 import { getPresignedUrl, extractFileNameFromKey } from "@/lib/s3"
 
+// 시간을 분:초 형식으로 변환하는 함수 (소수점 또는 문자열 처리)
+function formatDuration(duration: string | number | null): string {
+  if (!duration) return "0:00"
+  
+  // 이미 분:초 형식인지 확인 (예: "2:05")
+  if (typeof duration === 'string' && duration.includes(':')) {
+    return duration
+  }
+  
+  // 숫자로 변환 시도
+  const seconds = typeof duration === 'string' ? parseFloat(duration) : duration
+  
+  if (isNaN(seconds) || seconds <= 0) return "0:00"
+  
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = Math.floor(seconds % 60)
+  return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`
+}
+
 export async function GET(request: NextRequest) {
   try {
     // 사용자 인증 확인
@@ -59,9 +78,14 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // Presigned URL 생성하여 오디오 파일 접근 가능하게 만들기
+    // Presigned URL 생성하고 duration 포맷팅하여 오디오 파일 접근 가능하게 만들기
     const voiceEntriesWithPresignedUrls = await Promise.all(
       voiceEntries.map(async (entry) => {
+        let updatedEntry = { 
+          ...entry, 
+          audioDuration: formatDuration(entry.audioDuration) // duration 포맷팅
+        }
+        
         if (entry.audioFileUrl) {
           try {
             // S3 URL에서 키 추출
@@ -69,17 +93,14 @@ export async function GET(request: NextRequest) {
             if (urlParts.length > 1) {
               const s3Key = urlParts[1]
               const presignedUrl = await getPresignedUrl(s3Key, 3600) // 1시간 유효
-              return {
-                ...entry,
-                audioFileUrl: presignedUrl
-              }
+              updatedEntry.audioFileUrl = presignedUrl
             }
           } catch (error) {
             console.error('Presigned URL 생성 실패:', error)
             // 실패하면 원본 URL 유지
           }
         }
-        return entry
+        return updatedEntry
       })
     )
 
