@@ -46,7 +46,11 @@ export default function VoiceJournalLanding() {
   // NextAuth 세션 가져오기
   const { data: session, status } = useSession()
   const isLoggedIn = !!session
-  const user = session?.user ? { name: session.user.name || "사용자", email: session.user.email || "" } : null
+  const user = session?.user ? { 
+    name: session.user.name || "사용자", 
+    email: session.user.email || "",
+    image: session.user.image || undefined
+  } : null
 
   // 부드러운 스크롤 함수 추가
   const scrollToSection = (sectionId: string) => {
@@ -156,31 +160,6 @@ export default function VoiceJournalLanding() {
     { number: "21일", label: "평균 습관 형성 기간" },
   ]
 
-  const pricingPlans = [
-    {
-      name: "무료 체험",
-      price: "무료",
-      period: "영구 무료",
-      features: ["일일 계획 1회", "일일 회고 1회", "기본 성장 리포트", "7일 기록 보관", "음성 재생 기능"],
-      popular: false,
-    },
-    {
-      name: "프리미엄",
-      price: "미정",
-      period: "월",
-      features: [
-        "무제한 계획 & 회고",
-        "개인화된 성장 인사이트",
-        "무제한 기록 보관",
-        "목표 달성률 분석",
-        "습관 트래킹",
-        "우선 지원",
-        "성장 코칭 팁",
-        "고급 AI 분석",
-      ],
-      popular: true,
-    },
-  ]
 
   return (
     <div className="min-h-screen bg-white">
@@ -194,7 +173,7 @@ export default function VoiceJournalLanding() {
                   <div className="w-8 h-8 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg flex items-center justify-center">
                     <Mic className="w-5 h-5 text-white" />
                   </div>
-                  <h1 className="text-xl font-bold text-gray-900">Voice Journal</h1>
+                  <h1 className="text-xl font-bold text-gray-900">Speak Log</h1>
                 </div>
 
                 {/* Desktop Navigation */}
@@ -243,7 +222,7 @@ export default function VoiceJournalLanding() {
                         <DialogContent className="sm:max-w-md">
                           <DialogHeader>
                             <DialogTitle>로그인</DialogTitle>
-                            <DialogDescription>Voice Journal에 로그인하여 성장 여정을 시작하세요.</DialogDescription>
+                            <DialogDescription>Speak Log에 로그인하여 성장 여정을 시작하세요.</DialogDescription>
                           </DialogHeader>
                           <div className="py-6">
                             <Button
@@ -274,7 +253,7 @@ export default function VoiceJournalLanding() {
                             </Button>
                             
                             <p className="text-sm text-gray-500 text-center mt-4">
-                              Google 계정으로 로그인하여 Voice Journal을 시작하세요.
+                              Google 계정으로 로그인하여 Speak Log을 시작하세요.
                               <br />
                               별도의 회원가입은 필요하지 않습니다.
                             </p>
@@ -350,7 +329,7 @@ export default function VoiceJournalLanding() {
                           <DialogContent className="sm:max-w-md">
                             <DialogHeader>
                               <DialogTitle>로그인</DialogTitle>
-                              <DialogDescription>Voice Journal에 로그인하여 성장 여정을 시작하세요.</DialogDescription>
+                              <DialogDescription>Speak Log에 로그인하여 성장 여정을 시작하세요.</DialogDescription>
                             </DialogHeader>
                             <div className="py-6">
                               <Button
@@ -381,7 +360,7 @@ export default function VoiceJournalLanding() {
                               </Button>
                               
                               <p className="text-sm text-gray-500 text-center mt-4">
-                                Google 계정으로 로그인하여 Voice Journal을 시작하세요.
+                                Google 계정으로 로그인하여 Speak Log을 시작하세요.
                                 <br />
                                 별도의 회원가입은 필요하지 않습니다.
                               </p>
@@ -582,7 +561,7 @@ export default function VoiceJournalLanding() {
               <div className="text-center space-y-4 mb-16">
                 <h2 className="text-3xl md:text-4xl font-bold text-gray-900">실제 성장 스토리</h2>
                 <p className="text-xl text-gray-600">
-                  Voice Journal과 함께 목표를 달성하고 꿈을 이룬 사람들의 이야기입니다.
+                  Speak Log과 함께 목표를 달성하고 꿈을 이룬 사람들의 이야기입니다.
                 </p>
               </div>
 
@@ -617,57 +596,6 @@ export default function VoiceJournalLanding() {
             </div>
           </section>
 
-          {/* Pricing */}
-          <section id="pricing" className="py-20 bg-gray-50">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-              <div className="text-center space-y-4 mb-16">
-                <h2 className="text-3xl md:text-4xl font-bold text-gray-900">성장에 투자하세요</h2>
-                <p className="text-xl text-gray-600">작은 투자로 큰 변화를 만들어보세요. 첫 21일은 무료입니다.</p>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-                {pricingPlans.map((plan, index) => (
-                  <Card
-                    key={index}
-                    className={`relative ${plan.popular ? "border-purple-500 shadow-lg scale-105" : ""}`}
-                  >
-                    {plan.popular && (
-                      <Badge className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-purple-600">
-                        가장 효과적
-                      </Badge>
-                    )}
-                    <CardHeader className="text-center">
-                      <CardTitle className="text-2xl">{plan.name}</CardTitle>
-                      <div className="space-y-2">
-                        <div className="text-4xl font-bold">{plan.price}</div>
-                        <div className="text-gray-500">/{plan.period}</div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
-                      <ul className="space-y-3">
-                        {plan.features.map((feature, featureIndex) => (
-                          <li key={featureIndex} className="flex items-center gap-3">
-                            <CheckCircle className="w-5 h-5 text-green-500" />
-                            <span>{feature}</span>
-                          </li>
-                        ))}
-                      </ul>
-                      <Button
-                        className={`w-full ${
-                          plan.popular
-                            ? "bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
-                            : ""
-                        }`}
-                        variant={plan.popular ? "default" : "outline"}
-                      >
-                        {plan.name === "무료 체험" ? "무료로 시작하기" : "성장 가속화하기"}
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          </section>
 
           {/* CTA Section */}
           <section className="py-20 bg-gradient-to-r from-purple-600 to-blue-600">
@@ -686,11 +614,11 @@ export default function VoiceJournalLanding() {
                     onClick={handleGoogleLogin}
                   >
                     <Target className="w-5 h-5 mr-2" />
-                    무료로 체험하기
+                    무료로 시작하기
                     <ArrowRight className="w-5 h-5 ml-2" />
                   </Button>
                 </div>
-                <p className="text-sm text-purple-200">매일 1회 무료 체험 • 언제든 취소 가능 • 1분 가입</p>
+                <p className="text-sm text-purple-200">무료로 시작하기 • 언제든 취소 가능 • 1분 가입</p>
               </div>
             </div>
           </section>
@@ -704,7 +632,7 @@ export default function VoiceJournalLanding() {
                     <div className="w-8 h-8 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg flex items-center justify-center">
                       <Mic className="w-5 h-5 text-white" />
                     </div>
-                    <h3 className="text-xl font-bold">Voice Journal</h3>
+                    <h3 className="text-xl font-bold">Speak Log</h3>
                   </div>
                   <p className="text-gray-400">내 목소리로 만드는 매일의 성장, 개인 맞춤 자기계발 플랫폼</p>
                 </div>
@@ -774,7 +702,7 @@ export default function VoiceJournalLanding() {
               </div>
 
               <div className="border-t border-gray-800 mt-12 pt-8 text-center text-gray-400">
-                <p>&copy; 2024 Voice Journal. 모든 성장의 순간을 함께합니다.</p>
+                <p>&copy; 2024 Speak Log. 모든 성장의 순간을 함께합니다.</p>
               </div>
             </div>
           </footer>

@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth/next"
-import { authOptions } from "../auth/[...nextauth]/route"
+import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 
 export async function GET(request: NextRequest) {
@@ -24,18 +24,21 @@ export async function GET(request: NextRequest) {
     const date = searchParams.get("date") // YYYY-MM-DD 형식
     
     // 오늘 날짜 또는 지정된 날짜의 목표 조회
-    const targetDate = date ? new Date(date) : new Date()
+    const targetDate = date ? new Date(date + 'T00:00:00+09:00') : new Date()
     const startOfDay = new Date(targetDate)
     startOfDay.setHours(0, 0, 0, 0)
     const endOfDay = new Date(targetDate)
     endOfDay.setHours(23, 59, 59, 999)
 
+    console.log(`목표 조회: 사용자=${user.id}, 날짜범위=${startOfDay.toISOString()} ~ ${endOfDay.toISOString()}`)
+
+    // 날짜 기반 조회를 더 넓은 범위로 확장 (시간대 문제 해결)
     const goals = await prisma.goal.findMany({
       where: {
         userId: user.id,
         targetDate: {
-          gte: startOfDay,
-          lte: endOfDay
+          gte: new Date(startOfDay.getTime() - 24 * 60 * 60 * 1000), // 하루 전부터
+          lte: new Date(endOfDay.getTime() + 24 * 60 * 60 * 1000) // 하루 후까지
         }
       },
       orderBy: [
@@ -44,9 +47,25 @@ export async function GET(request: NextRequest) {
       ]
     })
 
+    // 실제 날짜와 일치하는 목표만 필터링
+    const filteredGoals = goals.filter(goal => {
+      const goalDate = new Date(goal.targetDate)
+      const goalDateString = goalDate.toISOString().split('T')[0]
+      const targetDateString = date || new Date().toISOString().split('T')[0]
+      return goalDateString === targetDateString
+    })
+
+    console.log(`조회된 목표 수: ${goals.length}, 필터링된 목표 수: ${filteredGoals.length}`)
+    goals.forEach(goal => {
+      console.log(`목표: ${goal.text} (targetDate: ${goal.targetDate.toISOString()})`)
+    })
+    filteredGoals.forEach(goal => {
+      console.log(`필터링된 목표: ${goal.text}`)
+    })
+
     return NextResponse.json({
       success: true,
-      data: goals
+      data: filteredGoals
     })
 
   } catch (error: any) {

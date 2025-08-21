@@ -113,8 +113,18 @@ export default function AccountSettingsModal({
     setMessage(null)
 
     try {
-      // 실제 구현에서는 계정 삭제 API 호출
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      const response = await fetch('/api/account/delete', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || '계정 삭제에 실패했습니다.')
+      }
 
       setMessage({ type: "success", text: "계정이 성공적으로 삭제되었습니다. 잠시 후 로그아웃됩니다." })
 
@@ -123,8 +133,9 @@ export default function AccountSettingsModal({
         onLogout()
         onClose()
       }, 3000)
-    } catch (error) {
-      setMessage({ type: "error", text: "계정 삭제 중 오류가 발생했습니다." })
+    } catch (error: any) {
+      console.error('계정 삭제 오류:', error)
+      setMessage({ type: "error", text: error.message || "계정 삭제 중 오류가 발생했습니다." })
     } finally {
       setIsLoading(false)
     }

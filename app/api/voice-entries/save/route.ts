@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth/next"
-import { authOptions } from "../../auth/[...nextauth]/route"
+import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { uploadToS3, generateS3Key } from "@/lib/s3"
 
@@ -29,6 +29,10 @@ export async function POST(request: NextRequest) {
     const text = (formData.get("text") as string) || ""
     const language = (formData.get("language") as string) || "ko"
     const duration = parseFloat((formData.get("duration") as string) || "0")
+    const audioFileUrl = formData.get("audioFileUrl") as string
+    const audioFileName = formData.get("audioFileName") as string
+    const audioFileSize = parseInt((formData.get("audioFileSize") as string) || "0")
+    const recordedAt = formData.get("recordedAt") as string // 선택한 날짜 받기
 
     if (!file) {
       return NextResponse.json({ error: "오디오 파일이 필요합니다." }, { status: 400 })
@@ -49,23 +53,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "사용자 정보를 찾을 수 없습니다." }, { status: 404 })
     }
 
-    // S3에 오디오 파일 업로드
-    const s3Key = generateS3Key(user.id, file.name)
-    const audioFileUrl = await uploadToS3(file, s3Key, file.type)
-    console.log(`S3 업로드 완료: ${audioFileUrl}`)
+    // S3 업로드가 이미 완료된 경우 URL을 사용, 아니면 새로 업로드
+    let finalAudioFileUrl = audioFileUrl
+    let finalAudioFileName = audioFileName || file.name
+    let finalAudioFileSize = audioFileSize || file.size
+    
+    if (!audioFileUrl && file) {
+      // S3에 아직 업로드되지 않은 경우
+      const s3Key = generateS3Key(user.id, file.name)
+      finalAudioFileUrl = await uploadToS3(file, s3Key, file.type)
+      console.log(`S3 업로드 완료: ${finalAudioFileUrl}`)
+    } else {
+      console.log(`기존 S3 URL 사용: ${finalAudioFileUrl}`)
+    }
 
     // 데이터베이스에 음성 기록 저장
+    // recordedAt이 제공되면 해당 날짜 사용, 아니면 현재 시간 사용
+    const recordDate = recordedAt 
+      ? new Date(recordedAt + 'T12:00:00+09:00') // 선택한 날짜의 정오(한국시간)로 설정
+      : new Date() // 기본값: 현재 시간
+      
+    console.log(`날짜 처리: 선택날짜=${recordedAt}, 저장날짜=${recordDate.toISOString()}`)
+      
     const voiceEntry = await prisma.voiceEntry.create({
       data: {
         userId: user.id,
         type: entryType as "plan" | "reflection",
         originalText: text.trim(),
-        audioFileName: file.name,
-        audioFileUrl: audioFileUrl,
-        audioFileSize: file.size,
+        audioFileName: finalAudioFileName,
+        audioFileUrl: finalAudioFileUrl,
+        audioFileSize: finalAudioFileSize,
         audioDuration: formatDuration(duration),
         language: language,
-        recordedAt: new Date(),
+        recordedAt: recordDate,
       }
     })
 

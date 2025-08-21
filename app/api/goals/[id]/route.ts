@@ -1,12 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth/next"
-import { authOptions } from "../../auth/[...nextauth]/route"
+import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.email) {
@@ -23,7 +24,7 @@ export async function GET(
 
     const goal = await prisma.goal.findFirst({
       where: {
-        id: params.id,
+        id: id,
         userId: user.id
       }
     })
@@ -45,8 +46,9 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
     // 사용자 인증 확인
     const session = await getServerSession(authOptions)
@@ -86,7 +88,7 @@ export async function PATCH(
     // 해당 사용자의 목표인지 확인 후 업데이트
     const updatedGoal = await prisma.goal.updateMany({
       where: {
-        id: params.id,
+        id: id,
         userId: user.id
       },
       data: updateData
@@ -101,12 +103,12 @@ export async function PATCH(
     // 업데이트된 목표 다시 조회
     const goal = await prisma.goal.findFirst({
       where: {
-        id: params.id,
+        id: id,
         userId: user.id
       }
     })
 
-    console.log(`목표 업데이트 완료: ${params.id}`)
+    console.log(`목표 업데이트 완료: ${id}`)
 
     return NextResponse.json({
       success: true,
@@ -130,8 +132,9 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.email) {
@@ -149,7 +152,7 @@ export async function DELETE(
     // 해당 사용자의 목표인지 확인 후 삭제
     const deletedGoal = await prisma.goal.deleteMany({
       where: {
-        id: params.id,
+        id: id,
         userId: user.id
       }
     })

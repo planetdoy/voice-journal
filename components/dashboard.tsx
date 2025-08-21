@@ -25,6 +25,7 @@ import {
   Volume2,
   Edit,
   Save,
+  Wand2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -34,13 +35,16 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Textarea } from "@/components/ui/textarea"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Input } from "@/components/ui/input"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 // 임포트에 AllRecordsModal 추가
 import AllRecordsModal from "./all-records-modal"
 // 임포트에 AccountSettingsModal 추가
 import AccountSettingsModal from "./account-settings-modal"
+// 임포트에 GoalHistoryModal 추가
+import GoalHistoryModal from "./goal-history-modal"
 
 interface DashboardProps {
-  user: { name: string; email: string } | null
+  user: { name: string; email: string; image?: string } | null
   onBackToLanding: () => void
   onLogout: () => void
 }
@@ -87,10 +91,18 @@ interface TranscriptionResult {
   duration?: number
   segments?: any[]
   error?: string
+  audioFileUrl?: string
+  audioFileName?: string
+  audioFileSize?: number
 }
 
 export default function Dashboard({ user, onBackToLanding, onLogout }: DashboardProps) {
   const [recordingType, setRecordingType] = useState<"plan" | "reflection">("plan")
+  const [recordingDate, setRecordingDate] = useState<string>(
+    recordingType === "plan" 
+      ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0] // 내일
+      : new Date().toISOString().split('T')[0] // 오늘
+  )
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
@@ -181,14 +193,6 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
     </Card>
   )
 
-  // 상태 변수 추가
-  const [dailyUsage, setDailyUsage] = useState({
-    planCount: 0,
-    reflectionCount: 0,
-    maxDaily: 1, // 무료 플랜 제한
-  })
-
-  const [isFreePlan, setIsFreePlan] = useState(true) // 무료 플랜 여부
 
   // 상태 변수에 추가
   const [showAllRecords, setShowAllRecords] = useState(false)
@@ -196,6 +200,7 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest")
   // 상태 변수에 추가
   const [showAccountSettings, setShowAccountSettings] = useState(false)
+  const [showGoalHistory, setShowGoalHistory] = useState(false)
 
   // 오디오 재생 상태 관리
   const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null)
@@ -206,6 +211,9 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
   const [transcriptionResult, setTranscriptionResult] = useState<TranscriptionResult | null>(null)
   const [editableText, setEditableText] = useState("")
   const [isSaving, setIsSaving] = useState(false)
+  const [isExtractingGoals, setIsExtractingGoals] = useState(false)
+  const [showGoalExtractionModal, setShowGoalExtractionModal] = useState(false)
+  const [savedVoiceEntryText, setSavedVoiceEntryText] = useState<string>("")
 
   // 기록 편집 상태 관리
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
@@ -288,6 +296,7 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
     }
   }
 
+
   // 음성 기록 불러오기 함수
   const fetchVoiceEntries = async () => {
     try {
@@ -322,7 +331,7 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
           }
         })
         
-        console.log("변환된 기록:", formattedEntries.map(e => ({ id: e.id, audioUrl: e.audioUrl })))
+        console.log("변환된 기록:", formattedEntries.map((e: any) => ({ id: e.id, audioUrl: e.audioUrl })))
         setVoiceEntries(formattedEntries)
       }
     } catch (error) {
@@ -388,16 +397,25 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
 
   // 오디오 파일 길이 계산
   const getAudioDuration = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const audio = new Audio()
+      const objectUrl = URL.createObjectURL(file)
+      
       audio.onloadedmetadata = () => {
         const duration = audio.duration
         const minutes = Math.floor(duration / 60)
         const seconds = Math.floor(duration % 60)
+        URL.revokeObjectURL(objectUrl) // 메모리 누수 방지
         resolve(`${minutes}:${seconds.toString().padStart(2, "0")}`)
       }
-      audio.onerror = () => resolve("0:00")
-      audio.src = URL.createObjectURL(file)
+      
+      audio.onerror = (error) => {
+        console.error("오디오 메타데이터 로드 오류:", error)
+        URL.revokeObjectURL(objectUrl)
+        resolve("0:00")
+      }
+      
+      audio.src = objectUrl
     })
   }
 
@@ -426,6 +444,7 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
   const handleFileUpload = async (file: File) => {
     setUploadError(null)
 
+
     const error = validateFile(file)
     if (error) {
       setUploadError(error)
@@ -436,6 +455,12 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
     setTranscriptionProgress("파일 분석 중...")
 
     try {
+      console.log("파일 업로드 시작:", {
+        name: file.name,
+        type: file.type,
+        size: `${(file.size / 1024 / 1024).toFixed(2)} MB`
+      })
+      
       const duration = await getAudioDuration(file)
       const url = URL.createObjectURL(file)
 
@@ -445,8 +470,9 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
         duration,
       })
       setTranscriptionProgress("업로드 완료")
-    } catch (error) {
-      setUploadError("파일 처리 중 오류가 발생했습니다.")
+    } catch (error: any) {
+      console.error("파일 처리 오류:", error)
+      setUploadError(`파일 처리 중 오류가 발생했습니다: ${error.message || '알 수 없는 오류'}`)
     } finally {
       setIsProcessing(false)
     }
@@ -485,16 +511,6 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
   const handleTranscription = async () => {
     if (!uploadedFile) return
 
-    // 무료 플랜 사용량 체크
-    if (isFreePlan) {
-      const currentCount = recordingType === "plan" ? dailyUsage.planCount : dailyUsage.reflectionCount
-      if (currentCount >= dailyUsage.maxDaily) {
-        setUploadError(
-          `무료 플랜은 ${recordingType === "plan" ? "계획" : "회고"}을 하루에 ${dailyUsage.maxDaily}회만 이용할 수 있습니다. 프리미엄으로 업그레이드하세요.`,
-        )
-        return
-      }
-    }
 
     setIsProcessing(true)
     setUploadError(null)
@@ -510,11 +526,17 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
 
       setTranscriptionProgress("변환 완료! 텍스트를 확인하고 수정하세요.")
 
-      // 변환 결과를 편집 모드로 설정
-      setTranscriptionResult(result)
+      // 변환 결과를 편집 모드로 설정 (S3 URL 포함)
+      setTranscriptionResult({
+        ...result,
+        audioFileUrl: result.audioFileUrl,
+        audioFileName: result.audioFileName,
+        audioFileSize: result.audioFileSize
+      })
       setEditableText(result.text)
       
       console.log("음성 변환 완료. 편집 모드로 전환:", result.text)
+      console.log("S3 URL:", result.audioFileUrl)
     } catch (error: any) {
       console.error("음성 변환 오류:", error)
       setUploadError(error.message || "음성 변환 중 오류가 발생했습니다.")
@@ -522,6 +544,56 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
     } finally {
       setIsProcessing(false)
     }
+  }
+
+  // 계획에서 목표 추출하기 (모달에서 확인 시 호출)
+  const handleExtractGoals = async () => {
+    if (!savedVoiceEntryText.trim()) return
+
+    setIsExtractingGoals(true)
+    try {
+      const response = await fetch("/api/goals/extract", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: savedVoiceEntryText.trim(),
+          targetDate: recordingDate
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || "목표 추출에 실패했습니다.")
+      }
+
+      console.log("목표 추출 완료:", result)
+
+      // 목표 목록 새로고침
+      await fetchTodayGoals()
+
+      // 모달 닫기
+      setShowGoalExtractionModal(false)
+      setSavedVoiceEntryText("")
+
+      // 성공 메시지 표시
+      alert(`음성 기록이 저장되었고, ${result.data.saved.length}개의 목표가 자동으로 생성되었습니다!`)
+
+    } catch (error: any) {
+      console.error("목표 추출 오류:", error)
+      alert(error.message || "목표 추출 중 오류가 발생했습니다.")
+    } finally {
+      setIsExtractingGoals(false)
+    }
+  }
+
+  // 목표 추출 모달에서 건너뛰기
+  const handleSkipGoalExtraction = () => {
+    setShowGoalExtractionModal(false)
+    setSavedVoiceEntryText("")
+    alert("음성 기록이 성공적으로 저장되었습니다!")
   }
 
   // 파일 크기 포맷팅
@@ -561,6 +633,14 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
       formData.append("text", editableText.trim()) // 수정된 텍스트
       formData.append("language", transcriptionResult.language || "ko")
       formData.append("duration", transcriptionResult.duration?.toString() || "0")
+      formData.append("recordedAt", recordingDate) // 선택한 날짜 추가
+      
+      // transcribe API에서 받은 S3 URL 정보 전달
+      if (transcriptionResult.audioFileUrl) {
+        formData.append("audioFileUrl", transcriptionResult.audioFileUrl)
+        formData.append("audioFileName", transcriptionResult.audioFileName || uploadedFile.file.name)
+        formData.append("audioFileSize", transcriptionResult.audioFileSize?.toString() || uploadedFile.file.size.toString())
+      }
 
       const response = await fetch("/api/voice-entries/save", {
         method: "POST",
@@ -579,6 +659,15 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
       await fetchVoiceEntries()
       await fetchStreakData()
 
+      // 계획 타입이고 텍스트가 있으면 목표 추출 모달 표시
+      if (recordingType === "plan" && editableText.trim()) {
+        setSavedVoiceEntryText(editableText.trim())
+        setShowGoalExtractionModal(true)
+      } else {
+        // 회고 타입이거나 텍스트가 없으면 바로 완료 메시지
+        alert("음성 기록이 성공적으로 저장되었습니다!")
+      }
+
       // 성공 시 상태 초기화
       setTranscriptionResult(null)
       setEditableText("")
@@ -589,37 +678,6 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
         fileInputRef.current.value = ""
       }
 
-      // 무료 플랜 사용량 업데이트
-      if (isFreePlan) {
-        setDailyUsage((prev) => ({
-          ...prev,
-          [recordingType === "plan" ? "planCount" : "reflectionCount"]:
-            prev[recordingType === "plan" ? "planCount" : "reflectionCount"] + 1,
-        }))
-      }
-
-      // 목록 새로고침
-      const listResponse = await fetch('/api/voice-entries')
-      if (listResponse.ok) {
-        const listResult = await listResponse.json()
-        if (listResult.success && listResult.data) {
-          const formattedEntries = listResult.data.map((entry: any) => ({
-            id: entry.id,
-            type: entry.type,
-            date: new Date(entry.recordedAt).toISOString().split('T')[0],
-            time: new Date(entry.recordedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
-            duration: formatDuration(entry.audioDuration),
-            text: entry.editedText || entry.originalText, // 편집된 텍스트가 있으면 우선 표시
-            audioUrl: entry.audioFileUrl || null,
-            fileName: entry.audioFileName,
-            fileSize: formatFileSize(entry.audioFileSize),
-            language: entry.language,
-            completed: entry.completed,
-            recordedAt: entry.recordedAt, // 원본 타임스탬프 보존
-          }))
-          setVoiceEntries(formattedEntries)
-        }
-      }
 
     } catch (error: any) {
       console.error("저장 오류:", error)
@@ -985,7 +1043,7 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
                 <div className="w-8 h-8 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg flex items-center justify-center">
                   <Mic className="w-5 h-5 text-white" />
                 </div>
-                <h1 className="text-xl font-bold text-gray-900">Voice Journal</h1>
+                <h1 className="text-xl font-bold text-gray-900">Speak Log</h1>
               </div>
             </div>
 
@@ -995,8 +1053,8 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
                 <p className="text-xs text-gray-500">{user?.email}</p>
               </div>
               <Avatar>
-                <AvatarImage src="/placeholder.svg?height=32&width=32" />
-                <AvatarFallback>{user?.name?.[0] || "U"}</AvatarFallback>
+                <AvatarImage src={user?.image || "/placeholder.svg?height=32&width=32"} alt={user?.name || "User"} />
+                <AvatarFallback>{user?.name?.[0]?.toUpperCase() || "U"}</AvatarFallback>
               </Avatar>
               <Button variant="ghost" size="icon" onClick={onLogout}>
                 <LogOut className="w-5 h-5" />
@@ -1140,30 +1198,61 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
             {/* Upload Section */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Upload className="w-5 h-5" />
-                  음성 파일 업로드 & AI 변환
-                </CardTitle>
-                <CardDescription>
-                  계획이나 회고를 담은 음성 파일을 업로드하면 OpenAI Whisper가 자동으로 텍스트로 변환합니다.
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Upload className="w-5 h-5" />
+                      음성 파일 업로드 & AI 변환
+                    </CardTitle>
+                    <CardDescription>
+                      계획이나 회고를 담은 음성 파일을 업로드하면 OpenAI Whisper가 자동으로 텍스트로 변환합니다.
+                    </CardDescription>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex gap-4">
-                  <Button
-                    variant={recordingType === "plan" ? "default" : "outline"}
-                    onClick={() => setRecordingType("plan")}
-                    disabled={isProcessing}
-                  >
-                    내일 계획
-                  </Button>
-                  <Button
-                    variant={recordingType === "reflection" ? "default" : "outline"}
-                    onClick={() => setRecordingType("reflection")}
-                    disabled={isProcessing}
-                  >
-                    오늘 회고
-                  </Button>
+                <div className="space-y-4">
+                  <div className="flex gap-4">
+                    <Button
+                      variant={recordingType === "reflection" ? "default" : "outline"}
+                      onClick={() => {
+                        setRecordingType("reflection")
+                        // 오늘 날짜로 자동 설정
+                        setRecordingDate(new Date().toISOString().split('T')[0])
+                      }}
+                      disabled={isProcessing}
+                    >
+                      오늘 회고
+                    </Button>
+                    <Button
+                      variant={recordingType === "plan" ? "default" : "outline"}
+                      onClick={() => {
+                        setRecordingType("plan")
+                        // 내일 날짜로 자동 설정
+                        setRecordingDate(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0])
+                      }}
+                      disabled={isProcessing}
+                    >
+                      내일 계획
+                    </Button>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="recording-date" className="text-sm font-medium text-gray-700">
+                      기록 날짜:
+                    </label>
+                    <input
+                      id="recording-date"
+                      type="date"
+                      value={recordingDate}
+                      onChange={(e) => setRecordingDate(e.target.value)}
+                      className="px-3 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      disabled={isProcessing}
+                    />
+                    <span className="text-sm text-gray-500">
+                      {recordingType === "plan" ? "계획할 날짜" : "회고할 날짜"}
+                    </span>
+                  </div>
                 </div>
 
                 {uploadError && (
@@ -1198,17 +1287,31 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
                           <p className="text-sm text-gray-500">
                             {uploadedFile?.file.name} • {formatDuration(transcriptionResult.duration || 0)}
                           </p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {recordingDate} {recordingType === "plan" ? "계획" : "회고"}
+                          </p>
                         </div>
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700">변환된 텍스트 (수정 가능)</label>
-                        <Textarea 
-                          value={editableText} 
-                          onChange={(e) => setEditableText(e.target.value)}
-                          className="min-h-[120px] resize-none" 
-                          placeholder="변환된 텍스트를 확인하고 필요시 수정하세요..."
-                        />
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-medium text-gray-700">변환된 텍스트 (수정 가능)</label>
+                          <span className="text-xs text-gray-500">텍스트 영역의 우측 하단을 드래그하여 크기를 조절하세요</span>
+                        </div>
+                        <div className="relative group">
+                          <Textarea 
+                            value={editableText} 
+                            onChange={(e) => setEditableText(e.target.value)}
+                            className="min-h-[120px] resize-y pr-6 transition-all duration-200" 
+                            style={{ maxHeight: '500px' }}
+                            placeholder="변환된 텍스트를 확인하고 필요시 수정하세요..."
+                          />
+                          <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M8 2V14M8 14L4 10M8 14L12 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400"/>
+                            </svg>
+                          </div>
+                        </div>
                       </div>
 
                       <div className="flex gap-2">
@@ -1325,8 +1428,8 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
                       <div>
                         <p className="text-lg font-medium text-gray-900">
                           {recordingType === "plan"
-                            ? "내일 계획 음성 파일을 업로드하세요"
-                            : "오늘 회고 음성 파일을 업로드하세요"}
+                            ? `${recordingDate} 계획 음성 파일을 업로드하세요`
+                            : `${recordingDate} 회고 음성 파일을 업로드하세요`}
                         </p>
                         <p className="text-sm text-gray-500 mt-2">파일을 드래그 앤 드롭하거나 클릭하여 선택하세요</p>
                         <p className="text-xs text-gray-400 mt-1">
@@ -1372,7 +1475,26 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {voiceEntries.slice(0, 3).map((entry) => (
+                    {voiceEntries
+                      .sort((a, b) => {
+                        // recordedAt이 있으면 사용, 없으면 date/time 조합 사용
+                        if (a.recordedAt && b.recordedAt) {
+                          const timeA = new Date(a.recordedAt).getTime()
+                          const timeB = new Date(b.recordedAt).getTime()
+                          return sortOrder === "newest" 
+                            ? timeB - timeA  // 최신순
+                            : timeA - timeB  // 오래된순
+                        }
+                        
+                        // fallback: 날짜/시간 문자열 조합 사용
+                        const dateTimeA = new Date(`${a.date}T${a.time}:00`)
+                        const dateTimeB = new Date(`${b.date}T${b.time}:00`)
+                        
+                        return sortOrder === "newest" 
+                          ? dateTimeB.getTime() - dateTimeA.getTime() 
+                          : dateTimeA.getTime() - dateTimeB.getTime()
+                      })
+                      .slice(0, 3).map((entry) => (
                     <div key={entry.id} className="border rounded-lg p-4">
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center gap-3 flex-wrap">
@@ -1453,12 +1575,13 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
                         <Textarea 
                           value={editingText} 
                           onChange={(e) => setEditingText(e.target.value)}
-                          className="min-h-[80px] resize-none border-blue-300 focus:border-blue-500" 
+                          className="min-h-[80px] resize-y border-blue-300 focus:border-blue-500" 
+                          style={{ maxHeight: '400px' }}
                           placeholder="텍스트를 수정하세요..."
                           autoFocus
                         />
                       ) : (
-                        <Textarea value={entry.text} readOnly className="min-h-[80px] resize-none" />
+                        <Textarea value={entry.text} readOnly className="min-h-[80px] resize-y" style={{ maxHeight: '400px' }} />
                       )}
                       <div className="flex justify-between items-center mt-2">
                         {entry.fileSize && <p className="text-xs text-gray-400">파일 크기: {entry.fileSize}</p>}
@@ -1478,7 +1601,18 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
-                  오늘의 목표
+                  <div className="flex items-center gap-2">
+                    오늘의 목표
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowGoalHistory(true)}
+                      className="text-xs"
+                    >
+                      <History className="w-3 h-3 mr-1" />
+                      지난 목표
+                    </Button>
+                  </div>
                   <Button variant="ghost" size="icon" onClick={() => setIsAddingGoal(true)} disabled={isAddingGoal}>
                     <Plus className="w-4 h-4" />
                   </Button>
@@ -1611,47 +1745,6 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
               </CardContent>
             </Card>
 
-            {/* Usage Limit Card - 무료 플랜인 경우만 표시 */}
-            {isFreePlan && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    오늘의 사용량
-                    <Badge variant="outline">무료 플랜</Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div>
-                      <div className="flex justify-between text-sm text-gray-600 mb-2">
-                        <span>계획 세우기</span>
-                        <span>
-                          {dailyUsage.planCount}/{dailyUsage.maxDaily}
-                        </span>
-                      </div>
-                      <Progress value={(dailyUsage.planCount / dailyUsage.maxDaily) * 100} className="h-2" />
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between text-sm text-gray-600 mb-2">
-                        <span>회고하기</span>
-                        <span>
-                          {dailyUsage.reflectionCount}/{dailyUsage.maxDaily}
-                        </span>
-                      </div>
-                      <Progress value={(dailyUsage.reflectionCount / dailyUsage.maxDaily) * 100} className="h-2" />
-                    </div>
-
-                    <div className="pt-4 border-t">
-                      <Button className="w-full bg-gradient-to-r from-purple-600 to-blue-600" size="sm">
-                        프리미엄 업그레이드
-                      </Button>
-                      <p className="text-xs text-gray-500 text-center mt-2">무제한 이용 + 고급 기능</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
 
             {/* Quick Actions */}
             <Card>
@@ -1689,6 +1782,8 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
         voiceEntries={voiceEntries}
         onPlayAudio={playAudio}
         onDeleteEntry={deleteVoiceEntry}
+        sortOrder={sortOrder}
+        onSortOrderChange={setSortOrder}
       />
       {/* Account Settings Modal */}
       <AccountSettingsModal
@@ -1700,11 +1795,75 @@ export default function Dashboard({ user, onBackToLanding, onLogout }: Dashboard
           joinDate: "2024-01-15",
           lastLogin: "방금 전",
           emailVerified: true,
-          twoFactorEnabled: false,
         }}
         onUpdateUser={handleUserUpdate}
         onLogout={onLogout}
       />
+      {/* Goal History Modal */}
+      <GoalHistoryModal
+        isOpen={showGoalHistory}
+        onClose={() => setShowGoalHistory(false)}
+        onTransferGoals={(goalIds) => {
+          // 목표 이관 후 현재 목표 목록 새로고침
+          fetchTodayGoals()
+          setShowGoalHistory(false)
+        }}
+      />
+
+      {/* Goal Extraction Confirmation Modal */}
+      <Dialog open={showGoalExtractionModal} onOpenChange={setShowGoalExtractionModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Target className="w-5 h-5 text-purple-600" />
+              목표를 추출하시겠습니까?
+            </DialogTitle>
+            <DialogDescription>
+              저장된 계획에서 실행 가능한 목표들을 자동으로 추출할 수 있습니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="bg-gray-50 p-3 rounded-lg mb-4">
+              <p className="text-sm text-gray-600 font-medium mb-2">저장된 계획:</p>
+              <p className="text-sm text-gray-800 line-clamp-3">
+                {savedVoiceEntryText.length > 100 
+                  ? savedVoiceEntryText.substring(0, 100) + "..." 
+                  : savedVoiceEntryText}
+              </p>
+            </div>
+            <p className="text-xs text-gray-500">
+              AI가 텍스트를 분석하여 구체적인 할 일을 목표로 만들어드립니다.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={handleSkipGoalExtraction}
+              disabled={isExtractingGoals}
+              className="flex-1"
+            >
+              건너뛰기
+            </Button>
+            <Button
+              onClick={handleExtractGoals}
+              disabled={isExtractingGoals}
+              className="flex-1 bg-purple-600 hover:bg-purple-700"
+            >
+              {isExtractingGoals ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  추출 중...
+                </>
+              ) : (
+                <>
+                  <Wand2 className="w-4 h-4 mr-2" />
+                  목표 추출
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

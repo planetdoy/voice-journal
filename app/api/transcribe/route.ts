@@ -1,13 +1,15 @@
 import { type NextRequest, NextResponse } from "next/server"
 import OpenAI from "openai"
 import { getServerSession } from "next-auth/next"
-import { authOptions } from "../auth/[...nextauth]/route"
+import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { uploadToS3, generateS3Key } from "@/lib/s3"
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+function getOpenAIClient() {
+  return new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  })
+}
 
 // 초 단위 시간을 분:초 형식으로 변환하는 함수
 function formatDuration(seconds: number): string {
@@ -44,7 +46,9 @@ export async function POST(request: NextRequest) {
     }
 
     // 파일 크기 검증 (25MB 제한 - OpenAI 제한)
+    console.log(`파일 크기 검증: ${file.name} - ${file.size} bytes (${(file.size / 1024 / 1024).toFixed(2)} MB)`)
     if (file.size > 25 * 1024 * 1024) {
+      console.error(`파일 크기 초과: ${file.size} bytes > 25MB`)
       return NextResponse.json({ error: "파일 크기가 너무 큽니다. 최대 25MB까지 지원됩니다." }, { status: 400 })
     }
 
@@ -74,7 +78,22 @@ export async function POST(request: NextRequest) {
 
     console.log(`음성 변환 시작: ${file.name} (${file.size} bytes)`)
 
+    // 파일이 정상적으로 읽히는지 확인
+    try {
+      const fileBuffer = await file.arrayBuffer()
+      console.log(`파일 버퍼 크기: ${fileBuffer.byteLength} bytes`)
+      
+      if (fileBuffer.byteLength !== file.size) {
+        console.error(`파일 크기 불일치: 원본=${file.size}, 버퍼=${fileBuffer.byteLength}`)
+        return NextResponse.json({ error: "파일이 손상되었거나 불완전합니다." }, { status: 400 })
+      }
+    } catch (bufferError) {
+      console.error("파일 버퍼 읽기 오류:", bufferError)
+      return NextResponse.json({ error: "파일을 읽을 수 없습니다." }, { status: 400 })
+    }
+
     // OpenAI Whisper API 호출
+    const openai = getOpenAIClient()
     const transcription = await openai.audio.transcriptions.create({
       file: file,
       model: "whisper-1",
@@ -97,34 +116,37 @@ export async function POST(request: NextRequest) {
     // S3에 오디오 파일 업로드
     console.log(`S3 업로드 시작: ${file.name}`)
     const s3Key = generateS3Key(user.id, file.name)
-    const audioFileUrl = await uploadToS3(file, s3Key, file.type)
+    
+    let audioFileUrl: string
+    try {
+      audioFileUrl = await uploadToS3(file, s3Key, file.type)
+      console.log(`S3 업로드 성공: ${audioFileUrl}`)
+    } catch (s3Error: any) {
+      console.error("S3 업로드 실패:", s3Error)
+      // Whisper는 성공했지만 S3 업로드가 실패한 경우
+      return NextResponse.json({
+        success: true,
+        text: transcription.text,
+        language: transcription.language,
+        duration: transcription.duration,
+        segments: transcription.segments,
+        warning: "S3 업로드에 실패했습니다. 음성 파일은 저장되지 않았습니다."
+      })
+    }
     console.log(`S3 업로드 완료: ${audioFileUrl}`)
 
-    // 데이터베이스에 음성 기록 저장
-    const voiceEntry = await prisma.voiceEntry.create({
-      data: {
-        userId: user.id,
-        type: entryType as "plan" | "reflection",
-        originalText: transcription.text,
-        audioFileName: file.name,
-        audioFileUrl: audioFileUrl,
-        audioFileSize: file.size,
-        audioDuration: formatDuration(transcription.duration || 0),
-        language: transcription.language || language,
-        confidence: transcription.segments?.[0]?.avg_logprob || null,
-        recordedAt: new Date(),
-      }
-    })
-
-    console.log(`음성 기록 저장 완료: ${voiceEntry.id}`)
-
+    // 데이터베이스에 저장하지 않고 변환 결과만 반환
+    // 저장은 사용자가 "저장하기" 버튼을 클릭할 때만 수행
     return NextResponse.json({
       success: true,
-      id: voiceEntry.id,
       text: transcription.text,
       language: transcription.language,
       duration: transcription.duration,
       segments: transcription.segments,
+      // 임시 데이터 (저장 시 필요)
+      audioFileUrl: audioFileUrl,
+      audioFileName: file.name,
+      audioFileSize: file.size,
     })
   } catch (error: any) {
     console.error("음성 변환 오류:", error)

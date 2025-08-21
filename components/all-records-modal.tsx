@@ -44,6 +44,8 @@ interface AllRecordsModalProps {
   voiceEntries: VoiceEntry[]
   onPlayAudio: (audioUrl: string) => void
   onDeleteEntry: (entryId: string) => void
+  sortOrder?: "newest" | "oldest"
+  onSortOrderChange?: (order: "newest" | "oldest") => void
 }
 
 export default function AllRecordsModal({
@@ -52,11 +54,18 @@ export default function AllRecordsModal({
   voiceEntries,
   onPlayAudio,
   onDeleteEntry,
+  sortOrder: externalSortOrder = "newest",
+  onSortOrderChange,
 }: AllRecordsModalProps) {
   const [searchTerm, setSearchTerm] = React.useState("")
   const [filterType, setFilterType] = React.useState<"all" | "plan" | "reflection">("all")
-  const [sortOrder, setSortOrder] = React.useState<"newest" | "oldest">("newest")
+  const [sortOrder, setSortOrder] = React.useState<"newest" | "oldest">(externalSortOrder)
   const [selectedEntry, setSelectedEntry] = React.useState<VoiceEntry | null>(null)
+
+  // 외부에서 sortOrder가 변경되면 내부 상태도 동기화
+  React.useEffect(() => {
+    setSortOrder(externalSortOrder)
+  }, [externalSortOrder])
 
   // 필터링 및 정렬된 기록
   const filteredAndSortedEntries = React.useMemo(() => {
@@ -222,6 +231,8 @@ export default function AllRecordsModal({
               const newOrder = sortOrder === "newest" ? "oldest" : "newest"
               console.log(`정렬 순서 변경: ${sortOrder} → ${newOrder}`)
               setSortOrder(newOrder)
+              // 외부 콜백 호출 (메인 대시보드의 정렬 순서도 동기화)
+              onSortOrderChange?.(newOrder)
             }}
             className="w-full sm:w-auto"
           >

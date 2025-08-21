@@ -56,6 +56,7 @@ model User {
   sessions     Session[]
   voiceEntries VoiceEntry[]
   goals        Goal[]
+  tokenUsages  TokenUsage[]
 
   @@map("users")
 }
@@ -113,6 +114,26 @@ model Goal {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("goals")
+}
+
+// Token Usage Tracking
+model TokenUsage {
+  id            String   @id @default(cuid())
+  userId        String   @map("user_id")
+  endpoint      String   // API endpoint (e.g., "transcribe", "goals/extract")
+  model         String   // AI model used (e.g., "whisper-1", "gpt-4o-mini")
+  inputTokens   Int      @map("input_tokens")
+  outputTokens  Int      @map("output_tokens")
+  totalTokens   Int      @map("total_tokens")
+  cost          Float    // Estimated cost in USD
+  metadata      Json?    // Additional metadata
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // 관계
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("token_usages")
 }
 
 // Enums

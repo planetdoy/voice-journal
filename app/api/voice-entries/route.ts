@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth/next"
-import { authOptions } from "../auth/[...nextauth]/route"
+import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { getPresignedUrl, extractFileNameFromKey } from "@/lib/s3"
 
@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
 
     // Presigned URL 생성하고 duration 포맷팅하여 오디오 파일 접근 가능하게 만들기
     const voiceEntriesWithPresignedUrls = await Promise.all(
-      voiceEntries.map(async (entry) => {
+      voiceEntries.map(async (entry: any) => {
         let updatedEntry = { 
           ...entry, 
           audioDuration: formatDuration(entry.audioDuration) // duration 포맷팅

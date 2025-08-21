@@ -1,13 +1,14 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth/next"
-import { authOptions } from "../../auth/[...nextauth]/route"
+import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { getPresignedUrl } from "@/lib/s3"
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
     // 사용자 인증 확인
     const session = await getServerSession(authOptions)
@@ -27,7 +28,7 @@ export async function GET(
     // 음성 기록 조회 및 권한 확인
     const voiceEntry = await prisma.voiceEntry.findFirst({
       where: {
-        id: params.id,
+        id: id,
         userId: user.id
       }
     })

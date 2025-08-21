@@ -1,13 +1,14 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth/next"
-import { authOptions } from "../../auth/[...nextauth]/route"
+import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { deleteFromS3 } from "@/lib/s3"
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.email) {
@@ -24,7 +25,7 @@ export async function GET(
 
     const voiceEntry = await prisma.voiceEntry.findFirst({
       where: {
-        id: params.id,
+        id: id,
         userId: user.id
       }
     })
@@ -46,8 +47,9 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
     // 사용자 인증 확인
     const session = await getServerSession(authOptions)
@@ -73,7 +75,7 @@ export async function PATCH(
     // 해당 사용자의 음성 기록인지 확인 후 업데이트
     const updatedEntry = await prisma.voiceEntry.updateMany({
       where: {
-        id: params.id,
+        id: id,
         userId: user.id
       },
       data: {
@@ -88,11 +90,11 @@ export async function PATCH(
       }, { status: 404 })
     }
 
-    console.log(`음성 기록 텍스트 편집 완료: ${params.id}`)
+    console.log(`음성 기록 텍스트 편집 완료: ${id}`)
 
     return NextResponse.json({
       success: true,
-      id: params.id,
+      id: id,
       message: "텍스트가 수정되었습니다."
     })
 
@@ -112,8 +114,9 @@ export async function PATCH(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.email) {
@@ -140,7 +143,7 @@ export async function PUT(
     // 기존 기록 확인
     const existingEntry = await prisma.voiceEntry.findFirst({
       where: {
-        id: params.id,
+        id: id,
         userId: user.id
       }
     })
@@ -158,7 +161,7 @@ export async function PUT(
     if (completed !== undefined) updateData.completed = completed
 
     const updatedEntry = await prisma.voiceEntry.update({
-      where: { id: params.id },
+      where: { id: id },
       data: updateData
     })
 
@@ -181,8 +184,9 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.email) {
@@ -200,7 +204,7 @@ export async function DELETE(
     // 삭제할 음성 기록 조회
     const voiceEntry = await prisma.voiceEntry.findFirst({
       where: {
-        id: params.id,
+        id: id,
         userId: user.id
       }
     })
@@ -223,7 +227,7 @@ export async function DELETE(
 
     // 데이터베이스에서 음성 기록 삭제
     await prisma.voiceEntry.delete({
-      where: { id: params.id }
+      where: { id: id }
     })
 
     return NextResponse.json({

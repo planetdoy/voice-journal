@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "app/api/transcribe/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/voice-entries/save/route.ts": {
+      "maxDuration": 30
+    }
+  },
+  "env": {
+    "NEXTAUTH_URL": "https://your-domain.vercel.app"
+  }
+}

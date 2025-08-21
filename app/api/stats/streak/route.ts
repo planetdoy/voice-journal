@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth/next"
-import { authOptions } from "../../auth/[...nextauth]/route"
+import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 
 // 날짜를 YYYY-MM-DD 형식으로 변환
@@ -38,7 +38,7 @@ function calculateStreak(recordDates: string[]): {
   }
 
   // 날짜를 정렬 (최신순)
-  const sortedDates = [...new Set(recordDates)].sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
+  const sortedDates = [...new Set(recordDates)].sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime())
   
   const today = new Date()
   const todayStr = formatDate(today)
@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
     })
 
     // 기록된 날짜들을 YYYY-MM-DD 형식으로 변환
-    const recordDates = voiceEntries.map(entry => formatDate(new Date(entry.recordedAt)))
+    const recordDates = voiceEntries.map((entry: any) => formatDate(new Date(entry.recordedAt)))
 
     console.log("=== 연속 기록 계산 시작 ===")
     console.log("총 음성 기록 수:", voiceEntries.length)
@@ -152,7 +152,7 @@ export async function GET(request: NextRequest) {
     weekStart.setDate(weekStart.getDate() - weekStart.getDay()) // 주 시작 (일요일)
     weekStart.setHours(0, 0, 0, 0)
     
-    const thisWeekRecords = voiceEntries.filter(entry => 
+    const thisWeekRecords = voiceEntries.filter((entry: any) => 
       new Date(entry.recordedAt) >= weekStart
     ).length
 
@@ -161,7 +161,7 @@ export async function GET(request: NextRequest) {
     monthStart.setDate(1)
     monthStart.setHours(0, 0, 0, 0)
     
-    const thisMonthRecords = voiceEntries.filter(entry => 
+    const thisMonthRecords = voiceEntries.filter((entry: any) => 
       new Date(entry.recordedAt) >= monthStart
     ).length
 

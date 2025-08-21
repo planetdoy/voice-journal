@@ -1,4 +1,4 @@
-# Voice Journal - 내 목소리로 만드는 매일의 성장
+# Speak Log - 내 목소리로 만드는 매일의 성장
 
 음성 기반 개인 성장 플랫폼으로, 매일 밤 내일의 계획을 음성으로 녹음하고, 아침에 자신의 목소리로 들으며 동기부여를 받는 웹 애플리케이션입니다.
 
@@ -21,7 +21,7 @@
 ### 1. 프로젝트 클론
 ```bash
 git clone [repository-url]
-cd voice-journal
+cd speak-log
 ```
 
 ### 2. 패키지 설치
@@ -95,7 +95,7 @@ http://localhost:3000
 ## 프로젝트 구조
 
 ```
-voice-journal/
+speak-log/
 ├── app/                    # Next.js App Router
 │   ├── page.tsx           # 홈페이지 (랜딩 페이지)
 │   ├── layout.tsx         # 루트 레이아웃

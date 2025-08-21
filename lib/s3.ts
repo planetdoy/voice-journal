@@ -19,22 +19,41 @@ export async function uploadToS3(
   contentType: string
 ): Promise<string> {
   try {
-    const buffer = file instanceof File ? Buffer.from(await file.arrayBuffer()) : file
+    let body: Buffer | Uint8Array
+    
+    if (file instanceof File) {
+      // 스트리밍 방식으로 파일 읽기
+      const arrayBuffer = await file.arrayBuffer()
+      body = new Uint8Array(arrayBuffer)
+      
+      console.log(`S3 업로드 준비: 파일명=${file.name}, 크기=${file.size} bytes, 타입=${contentType}`)
+    } else {
+      body = file
+    }
 
     const command = new PutObjectCommand({
       Bucket: BUCKET_NAME,
       Key: key,
-      Body: buffer,
+      Body: body,
       ContentType: contentType,
+      ContentLength: file instanceof File ? file.size : file.length,
     })
 
-    await s3Client.send(command)
+    console.log(`S3 업로드 시작: key=${key}`)
+    const result = await s3Client.send(command)
+    console.log(`S3 업로드 완료: ${result.$metadata.httpStatusCode}`)
     
     // S3 URL 반환
     return `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION || 'ap-northeast-2'}.amazonaws.com/${key}`
-  } catch (error) {
+  } catch (error: any) {
     console.error('S3 업로드 오류:', error)
-    throw new Error('파일 업로드에 실패했습니다.')
+    console.error('오류 상세:', {
+      name: error.name,
+      message: error.message,
+      code: error.Code,
+      statusCode: error.$metadata?.httpStatusCode
+    })
+    throw new Error(`파일 업로드에 실패했습니다: ${error.message}`)
   }
 }
 
