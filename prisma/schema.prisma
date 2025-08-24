@@ -52,11 +52,13 @@ model User {
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
   // 관계
-  accounts     Account[]
-  sessions     Session[]
-  voiceEntries VoiceEntry[]
-  goals        Goal[]
-  tokenUsages  TokenUsage[]
+  accounts             Account[]
+  sessions             Session[]
+  voiceEntries         VoiceEntry[]
+  goals                Goal[]
+  tokenUsages          TokenUsage[]
+  notificationSettings NotificationSettings?
+  notificationLogs     NotificationLog[]
 
   @@map("users")
 }
@@ -136,6 +138,49 @@ model TokenUsage {
   @@map("token_usages")
 }
 
+// Notification Settings
+model NotificationSettings {
+  id                       String   @id @default(cuid())
+  userId                   String   @unique @map("user_id")
+  planReminderEnabled      Boolean  @default(true) @map("plan_reminder_enabled")
+  planReminderTime         String   @default("21:00") @map("plan_reminder_time") // HH:mm format
+  reflectionReminderEnabled Boolean  @default(true) @map("reflection_reminder_enabled")
+  reflectionReminderTime   String   @default("07:00") @map("reflection_reminder_time") // HH:mm format
+  streakAlertsEnabled      Boolean  @default(true) @map("streak_alerts_enabled")
+  goalDeadlineAlertsEnabled Boolean  @default(true) @map("goal_deadline_alerts_enabled")
+  emailEnabled             Boolean  @default(true) @map("email_enabled")
+  pushEnabled              Boolean  @default(false) @map("push_enabled")
+  pushSubscription         Json?    @map("push_subscription") // Web Push API subscription
+  timezone                 String   @default("Asia/Seoul")
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+
+  // 관계
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_settings")
+}
+
+// Notification Log
+model NotificationLog {
+  id        String           @id @default(cuid())
+  userId    String           @map("user_id")
+  type      NotificationType
+  channel   NotificationChannel
+  subject   String?
+  content   String           @db.Text
+  status    NotificationStatus
+  error     String?
+  sentAt    DateTime?        @map("sent_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  // 관계
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("notification_logs")
+}
+
 // Enums
 enum EntryType {
   plan
@@ -155,4 +200,26 @@ enum Priority {
   medium
   high
   @@map("priority")
+}
+
+enum NotificationType {
+  plan_reminder
+  reflection_reminder
+  streak_alert
+  goal_deadline
+  weekly_report
+  @@map("notification_type")
+}
+
+enum NotificationChannel {
+  email
+  push
+  @@map("notification_channel")
+}
+
+enum NotificationStatus {
+  pending
+  sent
+  failed
+  @@map("notification_status")
 }

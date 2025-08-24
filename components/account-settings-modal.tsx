@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Camera, Trash2, AlertTriangle, CheckCircle, Settings, Save, Upload } from "lucide-react"
+import { NotificationSettings } from "@/components/notification-settings"
 
 interface AccountSettingsModalProps {
   isOpen: boolean
@@ -187,8 +188,9 @@ export default function AccountSettingsModal({
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 overflow-hidden">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="profile">프로필</TabsTrigger>
+            <TabsTrigger value="notifications">알림</TabsTrigger>
             <TabsTrigger value="danger">위험 구역</TabsTrigger>
           </TabsList>
 
@@ -315,6 +317,13 @@ export default function AccountSettingsModal({
               </Card>
             </TabsContent>
 
+            <TabsContent value="notifications" className="space-y-6">
+              <Card>
+                <CardContent className="pt-6">
+                  <NotificationSettings />
+                </CardContent>
+              </Card>
+            </TabsContent>
 
             <TabsContent value="danger" className="space-y-6">
               {/* 계정 삭제 */}
