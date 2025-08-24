@@ -6,6 +6,13 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Bell, Mail, Smartphone, Calendar, Trophy, Target } from "lucide-react"
 import { toast } from "sonner"
+import { 
+  registerServiceWorker, 
+  requestNotificationPermission, 
+  subscribeToPush,
+  unsubscribeFromPush,
+  isPushSupported 
+} from "@/lib/push-notification"
 
 interface NotificationSettings {
   planReminderEnabled: boolean
@@ -55,6 +62,46 @@ export function NotificationSettings() {
     }
   }
 
+  const handlePushToggle = async (enabled: boolean) => {
+    if (enabled) {
+      // Push 알림 활성화
+      if (!isPushSupported()) {
+        toast.error("이 브라우저는 Push 알림을 지원하지 않습니다")
+        return
+      }
+
+      try {
+        // Service Worker 등록
+        await registerServiceWorker()
+        
+        // 알림 권한 요청
+        const permissionGranted = await requestNotificationPermission()
+        if (!permissionGranted) {
+          toast.error("알림 권한이 거부되었습니다")
+          return
+        }
+
+        // Push 구독
+        await subscribeToPush()
+        setSettings(prev => ({ ...prev, pushEnabled: true }))
+        toast.success("브라우저 알림이 활성화되었습니다")
+      } catch (error) {
+        console.error("Failed to enable push notifications:", error)
+        toast.error("브라우저 알림 활성화에 실패했습니다")
+      }
+    } else {
+      // Push 알림 비활성화
+      try {
+        await unsubscribeFromPush()
+        setSettings(prev => ({ ...prev, pushEnabled: false }))
+        toast.success("브라우저 알림이 비활성화되었습니다")
+      } catch (error) {
+        console.error("Failed to disable push notifications:", error)
+        toast.error("브라우저 알림 비활성화에 실패했습니다")
+      }
+    }
+  }
+
   const saveSettings = async () => {
     setSaving(true)
     try {
@@ -66,18 +113,6 @@ export function NotificationSettings() {
 
       if (response.ok) {
         toast.success("알림 설정이 저장되었습니다")
-        
-        // Push 알림 권한 요청
-        if (settings.pushEnabled && "Notification" in window) {
-          const permission = await Notification.requestPermission()
-          if (permission === "granted") {
-            // Push 구독 로직 (추후 구현)
-            console.log("Push notifications enabled")
-          } else {
-            setSettings(prev => ({ ...prev, pushEnabled: false }))
-            toast.error("브라우저 알림 권한이 거부되었습니다")
-          }
-        }
       } else {
         toast.error("설정 저장에 실패했습니다")
       }
@@ -132,9 +167,7 @@ export function NotificationSettings() {
             <Switch
               id="push-enabled"
               checked={settings.pushEnabled}
-              onCheckedChange={(checked) => 
-                setSettings(prev => ({ ...prev, pushEnabled: checked }))
-              }
+              onCheckedChange={handlePushToggle}
             />
           </div>
         </div>
