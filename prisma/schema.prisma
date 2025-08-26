@@ -143,7 +143,6 @@ model NotificationSettings {
   id                       String   @id @default(cuid())
   userId                   String   @unique @map("user_id")
   dailyReminderEnabled     Boolean  @default(true) @map("daily_reminder_enabled")
-  dailyReminderTime        String   @default("20:00") @map("daily_reminder_time") // HH:mm format
   emailEnabled             Boolean  @default(true) @map("email_enabled")
   pushEnabled              Boolean  @default(false) @map("push_enabled")
   pushSubscription         Json?    @map("push_subscription") // Web Push API subscription

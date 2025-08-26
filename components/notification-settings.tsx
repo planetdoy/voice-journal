@@ -16,7 +16,6 @@ import {
 
 interface NotificationSettings {
   dailyReminderEnabled: boolean
-  dailyReminderTime: string
   emailEnabled: boolean
   pushEnabled: boolean
   timezone: string
@@ -25,7 +24,6 @@ interface NotificationSettings {
 export function NotificationSettings() {
   const [settings, setSettings] = useState<NotificationSettings>({
     dailyReminderEnabled: true,
-    dailyReminderTime: "20:00",
     emailEnabled: true,
     pushEnabled: false,
     timezone: "Asia/Seoul"
@@ -186,27 +184,16 @@ export function NotificationSettings() {
             <div className="space-y-1">
               <Label htmlFor="daily-reminder">데일리 기록 알림</Label>
               <p className="text-xs text-muted-foreground">
-                오늘을 돌아보고 내일을 계획하는 시간을 알려드립니다
+                매일 저녁 8시에 오늘을 돌아보고 내일을 계획하는 시간을 알려드립니다
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="time"
-                value={settings.dailyReminderTime}
-                onChange={(e) => 
-                  setSettings(prev => ({ ...prev, dailyReminderTime: e.target.value }))
-                }
-                className="px-2 py-1 text-sm border rounded"
-                disabled={!settings.dailyReminderEnabled}
-              />
-              <Switch
-                id="daily-reminder"
-                checked={settings.dailyReminderEnabled}
-                onCheckedChange={(checked) => 
-                  setSettings(prev => ({ ...prev, dailyReminderEnabled: checked }))
-                }
-              />
-            </div>
+            <Switch
+              id="daily-reminder"
+              checked={settings.dailyReminderEnabled}
+              onCheckedChange={(checked) => 
+                setSettings(prev => ({ ...prev, dailyReminderEnabled: checked }))
+              }
+            />
           </div>
         </div>
       </div>

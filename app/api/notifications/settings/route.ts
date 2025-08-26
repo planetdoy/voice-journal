@@ -27,7 +27,6 @@ export async function GET() {
         data: {
           userId: user.id,
           dailyReminderEnabled: true,
-          dailyReminderTime: "20:00",
           emailEnabled: true,
           pushEnabled: false,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Seoul"
@@ -77,7 +76,6 @@ export async function PUT(request: NextRequest) {
         where: { userId: user.id },
         data: {
           dailyReminderEnabled: body.dailyReminderEnabled ?? existingSettings.dailyReminderEnabled,
-          dailyReminderTime: body.dailyReminderTime ?? existingSettings.dailyReminderTime,
           emailEnabled: body.emailEnabled ?? existingSettings.emailEnabled,
           pushEnabled: body.pushEnabled ?? existingSettings.pushEnabled,
           pushSubscription: body.pushSubscription ?? existingSettings.pushSubscription,
@@ -90,7 +88,6 @@ export async function PUT(request: NextRequest) {
         data: {
           userId: user.id,
           dailyReminderEnabled: body.dailyReminderEnabled ?? true,
-          dailyReminderTime: body.dailyReminderTime ?? "20:00",
           emailEnabled: body.emailEnabled ?? true,
           pushEnabled: body.pushEnabled ?? false,
           pushSubscription: body.pushSubscription ?? null,
