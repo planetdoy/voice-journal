@@ -71,7 +71,7 @@ export async function DELETE(request: NextRequest) {
       where: { userId: user.id },
       data: {
         pushEnabled: false,
-        pushSubscription: null
+        pushSubscription: null as any
       }
     })
 
