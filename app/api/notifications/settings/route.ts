@@ -26,6 +26,10 @@ export async function GET() {
       const settings = await prisma.notificationSettings.create({
         data: {
           userId: user.id,
+          dailyReminderEnabled: true,
+          dailyReminderTime: "20:00",
+          emailEnabled: true,
+          pushEnabled: false,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Seoul"
         }
       })
@@ -72,12 +76,8 @@ export async function PUT(request: NextRequest) {
       settings = await prisma.notificationSettings.update({
         where: { userId: user.id },
         data: {
-          planReminderEnabled: body.planReminderEnabled ?? existingSettings.planReminderEnabled,
-          planReminderTime: body.planReminderTime ?? existingSettings.planReminderTime,
-          reflectionReminderEnabled: body.reflectionReminderEnabled ?? existingSettings.reflectionReminderEnabled,
-          reflectionReminderTime: body.reflectionReminderTime ?? existingSettings.reflectionReminderTime,
-          streakAlertsEnabled: body.streakAlertsEnabled ?? existingSettings.streakAlertsEnabled,
-          goalDeadlineAlertsEnabled: body.goalDeadlineAlertsEnabled ?? existingSettings.goalDeadlineAlertsEnabled,
+          dailyReminderEnabled: body.dailyReminderEnabled ?? existingSettings.dailyReminderEnabled,
+          dailyReminderTime: body.dailyReminderTime ?? existingSettings.dailyReminderTime,
           emailEnabled: body.emailEnabled ?? existingSettings.emailEnabled,
           pushEnabled: body.pushEnabled ?? existingSettings.pushEnabled,
           pushSubscription: body.pushSubscription ?? existingSettings.pushSubscription,
@@ -89,12 +89,8 @@ export async function PUT(request: NextRequest) {
       settings = await prisma.notificationSettings.create({
         data: {
           userId: user.id,
-          planReminderEnabled: body.planReminderEnabled ?? true,
-          planReminderTime: body.planReminderTime ?? "21:00",
-          reflectionReminderEnabled: body.reflectionReminderEnabled ?? true,
-          reflectionReminderTime: body.reflectionReminderTime ?? "07:00",
-          streakAlertsEnabled: body.streakAlertsEnabled ?? true,
-          goalDeadlineAlertsEnabled: body.goalDeadlineAlertsEnabled ?? true,
+          dailyReminderEnabled: body.dailyReminderEnabled ?? true,
+          dailyReminderTime: body.dailyReminderTime ?? "20:00",
           emailEnabled: body.emailEnabled ?? true,
           pushEnabled: body.pushEnabled ?? false,
           pushSubscription: body.pushSubscription ?? null,

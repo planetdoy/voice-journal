@@ -15,12 +15,8 @@ import {
 } from "@/lib/push-notification"
 
 interface NotificationSettings {
-  planReminderEnabled: boolean
-  planReminderTime: string
-  reflectionReminderEnabled: boolean
-  reflectionReminderTime: string
-  streakAlertsEnabled: boolean
-  goalDeadlineAlertsEnabled: boolean
+  dailyReminderEnabled: boolean
+  dailyReminderTime: string
   emailEnabled: boolean
   pushEnabled: boolean
   timezone: string
@@ -28,12 +24,8 @@ interface NotificationSettings {
 
 export function NotificationSettings() {
   const [settings, setSettings] = useState<NotificationSettings>({
-    planReminderEnabled: true,
-    planReminderTime: "21:00",
-    reflectionReminderEnabled: true,
-    reflectionReminderTime: "07:00",
-    streakAlertsEnabled: true,
-    goalDeadlineAlertsEnabled: true,
+    dailyReminderEnabled: true,
+    dailyReminderTime: "20:00",
     emailEnabled: true,
     pushEnabled: false,
     timezone: "Asia/Seoul"
@@ -192,98 +184,29 @@ export function NotificationSettings() {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
-              <Label htmlFor="plan-reminder">저녁 계획 알림</Label>
+              <Label htmlFor="daily-reminder">데일리 기록 알림</Label>
               <p className="text-xs text-muted-foreground">
-                내일을 위한 계획을 세울 시간입니다
+                오늘을 돌아보고 내일을 계획하는 시간을 알려드립니다
               </p>
             </div>
             <div className="flex items-center gap-2">
               <input
                 type="time"
-                value={settings.planReminderTime}
+                value={settings.dailyReminderTime}
                 onChange={(e) => 
-                  setSettings(prev => ({ ...prev, planReminderTime: e.target.value }))
+                  setSettings(prev => ({ ...prev, dailyReminderTime: e.target.value }))
                 }
                 className="px-2 py-1 text-sm border rounded"
-                disabled={!settings.planReminderEnabled}
+                disabled={!settings.dailyReminderEnabled}
               />
               <Switch
-                id="plan-reminder"
-                checked={settings.planReminderEnabled}
+                id="daily-reminder"
+                checked={settings.dailyReminderEnabled}
                 onCheckedChange={(checked) => 
-                  setSettings(prev => ({ ...prev, planReminderEnabled: checked }))
+                  setSettings(prev => ({ ...prev, dailyReminderEnabled: checked }))
                 }
               />
             </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label htmlFor="reflection-reminder">아침 회고 알림</Label>
-              <p className="text-xs text-muted-foreground">
-                어제를 돌아보고 오늘을 시작하세요
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="time"
-                value={settings.reflectionReminderTime}
-                onChange={(e) => 
-                  setSettings(prev => ({ ...prev, reflectionReminderTime: e.target.value }))
-                }
-                className="px-2 py-1 text-sm border rounded"
-                disabled={!settings.reflectionReminderEnabled}
-              />
-              <Switch
-                id="reflection-reminder"
-                checked={settings.reflectionReminderEnabled}
-                onCheckedChange={(checked) => 
-                  setSettings(prev => ({ ...prev, reflectionReminderEnabled: checked }))
-                }
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 동기부여 알림 */}
-      <div className="space-y-4">
-        <h4 className="text-sm font-medium flex items-center gap-2">
-          <Trophy className="w-4 h-4" />
-          동기부여 알림
-        </h4>
-        
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label htmlFor="streak-alerts">연속 기록 알림</Label>
-              <p className="text-xs text-muted-foreground">
-                기록 스트릭 유지를 위한 알림
-              </p>
-            </div>
-            <Switch
-              id="streak-alerts"
-              checked={settings.streakAlertsEnabled}
-              onCheckedChange={(checked) => 
-                setSettings(prev => ({ ...prev, streakAlertsEnabled: checked }))
-              }
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label htmlFor="goal-deadlines">목표 마감일 알림</Label>
-              <p className="text-xs text-muted-foreground">
-                목표 달성 기한이 임박하면 알려드립니다
-              </p>
-            </div>
-            <Switch
-              id="goal-deadlines"
-              checked={settings.goalDeadlineAlertsEnabled}
-              onCheckedChange={(checked) => 
-                setSettings(prev => ({ ...prev, goalDeadlineAlertsEnabled: checked }))
-              }
-            />
           </div>
         </div>
       </div>

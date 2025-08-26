@@ -142,12 +142,8 @@ model TokenUsage {
 model NotificationSettings {
   id                       String   @id @default(cuid())
   userId                   String   @unique @map("user_id")
-  planReminderEnabled      Boolean  @default(true) @map("plan_reminder_enabled")
-  planReminderTime         String   @default("21:00") @map("plan_reminder_time") // HH:mm format
-  reflectionReminderEnabled Boolean  @default(true) @map("reflection_reminder_enabled")
-  reflectionReminderTime   String   @default("07:00") @map("reflection_reminder_time") // HH:mm format
-  streakAlertsEnabled      Boolean  @default(true) @map("streak_alerts_enabled")
-  goalDeadlineAlertsEnabled Boolean  @default(true) @map("goal_deadline_alerts_enabled")
+  dailyReminderEnabled     Boolean  @default(true) @map("daily_reminder_enabled")
+  dailyReminderTime        String   @default("20:00") @map("daily_reminder_time") // HH:mm format
   emailEnabled             Boolean  @default(true) @map("email_enabled")
   pushEnabled              Boolean  @default(false) @map("push_enabled")
   pushSubscription         Json?    @map("push_subscription") // Web Push API subscription
