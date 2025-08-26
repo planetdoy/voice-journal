@@ -187,14 +187,14 @@ export default function AccountSettingsModal({
           </Alert>
         )}
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 overflow-hidden">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="profile">프로필</TabsTrigger>
             <TabsTrigger value="notifications">알림</TabsTrigger>
             <TabsTrigger value="danger">위험 구역</TabsTrigger>
           </TabsList>
 
-          <div className="flex-1 overflow-y-auto mt-4">
+          <div className="flex-1 overflow-y-auto mt-4 pr-2">
             <TabsContent value="profile" className="space-y-6">
               {/* 프로필 사진 */}
               <Card>
@@ -317,12 +317,14 @@ export default function AccountSettingsModal({
               </Card>
             </TabsContent>
 
-            <TabsContent value="notifications" className="space-y-6">
-              <Card>
-                <CardContent className="pt-6">
-                  <NotificationSettings />
-                </CardContent>
-              </Card>
+            <TabsContent value="notifications" className="h-full">
+              <div className="h-full overflow-y-auto">
+                <Card>
+                  <CardContent className="pt-6">
+                    <NotificationSettings />
+                  </CardContent>
+                </Card>
+              </div>
             </TabsContent>
 
             <TabsContent value="danger" className="space-y-6">

@@ -53,7 +53,11 @@ export function NotificationSettings() {
       const response = await fetch("/api/notifications/settings")
       if (response.ok) {
         const data = await response.json()
+        console.log("Fetched settings:", data)
         setSettings(data)
+      } else {
+        const error = await response.json()
+        console.error("Failed to fetch settings:", error)
       }
     } catch (error) {
       console.error("Failed to fetch notification settings:", error)
@@ -104,6 +108,7 @@ export function NotificationSettings() {
 
   const saveSettings = async () => {
     setSaving(true)
+    console.log("Saving settings:", settings)
     try {
       const response = await fetch("/api/notifications/settings", {
         method: "PUT",
@@ -111,10 +116,14 @@ export function NotificationSettings() {
         body: JSON.stringify(settings)
       })
 
+      const data = await response.json()
+      console.log("Response data:", data)
+
       if (response.ok) {
         toast.success("알림 설정이 저장되었습니다")
       } else {
-        toast.error("설정 저장에 실패했습니다")
+        console.error("Save failed:", data)
+        toast.error(data.error || "설정 저장에 실패했습니다")
       }
     } catch (error) {
       console.error("Failed to save settings:", error)
