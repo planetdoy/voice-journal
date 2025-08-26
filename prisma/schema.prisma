@@ -199,8 +199,7 @@ enum Priority {
 }
 
 enum NotificationType {
-  plan_reminder
-  reflection_reminder
+  daily_reminder
   streak_alert
   goal_deadline
   weekly_report
