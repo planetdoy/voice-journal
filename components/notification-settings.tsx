@@ -184,7 +184,7 @@ export function NotificationSettings() {
             <div className="space-y-1">
               <Label htmlFor="daily-reminder">데일리 기록 알림</Label>
               <p className="text-xs text-muted-foreground">
-                매일 저녁 8시에 오늘을 돌아보고 내일을 계획하는 시간을 알려드립니다
+                매일 저녁 9시에 오늘을 돌아보고 내일을 계획하는 시간을 알려드립니다
               </p>
             </div>
             <Switch
